@@ -1,4 +1,4 @@
-# RShiny_Voting_System_Comparisons
+# Voting System Comparison Simulation using RShiny
 
 ** This is currently still being worked on. 
 
