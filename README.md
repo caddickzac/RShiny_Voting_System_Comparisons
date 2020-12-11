@@ -1,6 +1,6 @@
 # Voting System Comparison Simulation using RShiny
 
-** This is currently still being worked on. 
+** Note: This is currently under development. 
 
 I created an RShiny app for comparing voting systems using simulated data. 
 * Four voting sytems are compared (plurality, Cardinal, Ranked-Choice, & approval). 
