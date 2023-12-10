@@ -17,24 +17,24 @@ palette(c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3",
 ui <- shinyUI(fluidPage(
   headerPanel('Simulated Voting System Outcome Comparisons'),
   sidebarPanel(position='left',
-    # numericInput(ID, LABEL TEXT, DEFAULT INPUT, MIN, MAX)
-    numericInput('total_voters', 
-                 HTML("Number of voters: <font style=font-weight:normal>(max=500)</font>"),
-                 30,
-                 min = 1, max = 500),
-    numericInput('candidate_count',
-                 HTML("Number of candidates: <font style=font-weight:normal>(max=20)</font>"),
-                 3,
-                 min = 1, max = 20),
-    selectInput('voting_system', 'See full results:',
-                c('Plurality'='plurality',
-                  'Ranked-Choice'='ranked_choice',
-                  'Approval'='approval',
-                  'Score'='score')
-                )
+               # numericInput(ID, LABEL TEXT, DEFAULT INPUT, MIN, MAX)
+               numericInput('total_voters', 
+                            HTML("Number of voters: <font style=font-weight:normal>(max=500)</font>"),
+                            30,
+                            min = 1, max = 500),
+               numericInput('candidate_count',
+                            HTML("Number of candidates: <font style=font-weight:normal>(max=20)</font>"),
+                            3,
+                            min = 1, max = 20),
+               selectInput('voting_system', 'See full results:',
+                           c('Plurality'='plurality',
+                             'Ranked-Choice'='ranked_choice',
+                             'Approval'='approval',
+                             'Score'='score')
+               )
   ),
   mainPanel(
-            column(6,plotOutput(outputId="plotgraph", width="800px",height="400px")))
+    column(6,plotOutput(outputId="plotgraph", width="800px",height="400px")))
 ))
 
 server <- shinyServer(function(input, output){
@@ -67,7 +67,7 @@ server <- shinyServer(function(input, output){
   })
   
   #-----------------------------------------------------------------------------------------
-
+  
   # measure distance a voter is from candidate
   voter_candidate_distance_single_input <- function(candidate_x1, candidate_y1){
     # empty list to be filled with distance formula output
@@ -81,7 +81,7 @@ server <- shinyServer(function(input, output){
     }
     return(distance_output)
   }
-
+  
   candidate_distance <- reactive({
     matrix(
       c(
@@ -214,7 +214,7 @@ server <- shinyServer(function(input, output){
     Preference_18 <- c()
     Preference_19 <- c()
     Preference_20 <- c()
-
+    
     for(i in 1:input$total_voters){
       # RESET VARIABLES EACH LOOP
       distance_1 <- ""
@@ -287,7 +287,7 @@ server <- shinyServer(function(input, output){
       voter_p18 <- as.character(voter_distance_ordered_table[18,1]) # rank 18
       voter_p19 <- as.character(voter_distance_ordered_table[19,1]) # rank 19
       voter_p20 <- as.character(voter_distance_ordered_table[20,1]) # rank 20
-
+      
       Preference_1 <- append(Preference_1,
                              voter_p1,
                              after = length(Preference_1))
@@ -316,38 +316,38 @@ server <- shinyServer(function(input, output){
                              voter_p9,
                              after = length(Preference_9))
       Preference_10 <- append(Preference_10,
-                             voter_p10,
-                             after = length(Preference_10))
+                              voter_p10,
+                              after = length(Preference_10))
       Preference_11 <- append(Preference_11,
-                             voter_p11,
-                             after = length(Preference_11))
+                              voter_p11,
+                              after = length(Preference_11))
       Preference_12 <- append(Preference_12,
-                             voter_p12,
-                             after = length(Preference_12))
+                              voter_p12,
+                              after = length(Preference_12))
       Preference_13 <- append(Preference_13,
-                             voter_p13,
-                             after = length(Preference_13))
+                              voter_p13,
+                              after = length(Preference_13))
       Preference_14 <- append(Preference_14,
-                             voter_p14,
-                             after = length(Preference_14))
+                              voter_p14,
+                              after = length(Preference_14))
       Preference_15 <- append(Preference_15,
-                             voter_p15,
-                             after = length(Preference_15))
+                              voter_p15,
+                              after = length(Preference_15))
       Preference_16 <- append(Preference_16,
-                             voter_p16,
-                             after = length(Preference_16))
+                              voter_p16,
+                              after = length(Preference_16))
       Preference_17 <- append(Preference_17,
-                             voter_p17,
-                             after = length(Preference_17))
+                              voter_p17,
+                              after = length(Preference_17))
       Preference_18 <- append(Preference_18,
-                             voter_p18,
-                             after = length(Preference_18))
+                              voter_p18,
+                              after = length(Preference_18))
       Preference_19 <- append(Preference_19,
-                             voter_p19,
-                             after = length(Preference_19))
+                              voter_p19,
+                              after = length(Preference_19))
       Preference_20 <- append(Preference_20,
-                             voter_p20,
-                             after = length(Preference_20))
+                              voter_p20,
+                              after = length(Preference_20))
     }
     # output <- (voter_p2)
     output <- tibble(Preference_1, Preference_2, Preference_3, Preference_4, Preference_5,
@@ -356,7 +356,7 @@ server <- shinyServer(function(input, output){
                      Preference_16, Preference_17, Preference_18, Preference_19, Preference_20)
     return(output)
   }
-
+  
   combined_data <- reactive({
     tibble(voterData(),as_tibble(candidate_distance()))
   })
@@ -371,8 +371,8 @@ server <- shinyServer(function(input, output){
   
   plurality_summary_table <- reactive({
     tibble(aggregate(rank_choice_data()$Preference_1,
-              by=list(rank_choice_data()$Preference_1),
-              length)) %>%  # View vote counts
+                     by=list(rank_choice_data()$Preference_1),
+                     length)) %>%  # View vote counts
       arrange(desc(x)) %>% 
       rename("Candidate" = "Group.1",
              "Votes" = "x")
@@ -424,15 +424,15 @@ server <- shinyServer(function(input, output){
     if(input$candidate_count>=20){candidate_20_scoring <- mean(rank_choice_data()[,22,1])}
     
     score_array<- c(candidate_1_scoring, candidate_2_scoring, candidate_3_scoring, candidate_4_scoring, candidate_5_scoring,
-           candidate_6_scoring, candidate_7_scoring, candidate_8_scoring, candidate_9_scoring, candidate_10_scoring,
-           candidate_11_scoring, candidate_12_scoring, candidate_13_scoring, candidate_14_scoring, candidate_15_scoring,
-           candidate_16_scoring, candidate_17_scoring, candidate_18_scoring, candidate_19_scoring, candidate_20_scoring)
+                    candidate_6_scoring, candidate_7_scoring, candidate_8_scoring, candidate_9_scoring, candidate_10_scoring,
+                    candidate_11_scoring, candidate_12_scoring, candidate_13_scoring, candidate_14_scoring, candidate_15_scoring,
+                    candidate_16_scoring, candidate_17_scoring, candidate_18_scoring, candidate_19_scoring, candidate_20_scoring)
     candidate_labels <- as.character(seq(1:20))
     score_table_ordered <- tibble(score_array, candidate_labels) %>% 
       arrange(as.double(score_array))
     head(score_table_ordered,input$candidate_count)
   })
-
+  
   # approval voting decision making
   approval_number <- 50 # check if within 50 distance of 
   approval_check <- function(input, approval_number){
@@ -638,7 +638,24 @@ server <- shinyServer(function(input, output){
       rename('Candidate' = 'as.character(seq(1:input$candidate_count))',
              'Approved'='c(...)')
   })
-    
+  
+  
+  # rank choice voting process another round 
+  rank_choice_run_off_function <- function(voter_rankings, majority_check){
+    selected_rankings <- aggregate(rc_preference_table[,rank_choice_results_passes,1], 
+                                   by=list(rc_preference_table[,rank_choice_results_passes,1]),
+                                   length) 
+    selected_data <- ifelse(rc_preference_table[,(rank_choice_results_passes-1),1]==as.character(previous_loser),
+                            rc_preference_table[,(rank_choice_results_passes),1],
+                            rc_preference_table[,(rank_choice_results_passes-1),1])
+    selected_results <- aggregate(selected_data, by=list(selected_data), length) %>%
+      rename("Candidate" = "Group.1",
+             "Votes" = "x")
+    selected_results <- selected_results %>% 
+      arrange(desc(as.numeric(Votes)))
+    return(selected_results)
+  }
+  
   # return ranked-choice data
   ranked_choice_data_processing <- reactive({
     rc_1 <- rank_choice_data()$Preference_1
@@ -662,11 +679,54 @@ server <- shinyServer(function(input, output){
     rc_19 <- rank_choice_data()$Preference_19
     rc_20 <- rank_choice_data()$Preference_20
     
-    first_round <- aggregate(rc_1, by=list(rc_1),length) %>%
+    rc_preference_table <- tibble(rc_1, rc_2, rc_3, rc_4, rc_5,
+                                  rc_6, rc_7, rc_8, rc_9, rc_10,
+                                  rc_11, rc_12, rc_13, rc_14, rc_15,
+                                  rc_16, rc_17, rc_18, rc_19, rc_20)
+    
+    rank_choice_results_passes <- 1 # start at 1
+    majority_check <- ceiling(input$total_voters/2) # round up to nearest integer
+    
+    first_round_data <- aggregate(rc_preference_table[,rank_choice_results_passes,1], 
+                                  by=list(rc_preference_table[,rank_choice_results_passes,1]),
+                                  length) %>%
       rename("Candidate" = "Group.1",
              "Votes" = "x") 
-    first_round %>% 
+    first_round_data <- first_round_data %>% 
       arrange(desc(as.numeric(Votes)))
+    first_round_leader <- first_round_data[1,2]
+    first_round_loser <- tail(first_round_data,1)[1]
+    
+    
+    
+    if(!first_round_data[1,2]>=majority_check){
+      rank_choice_results_passes <- rank_choice_results_passes+1
+      previous_loser <- first_round_loser
+    }
+    
+    # first_round
+    # majority_check
+    # first_round[1,2]>=majority_check
+    
+    # if(rank_choice_results_passes==2){} # run function inside of this if/statement (repeat 19x times)
+    
+    
+    
+    
+    
+    # if(first_round_leader>=majority_check){
+    #   second_round_data <- ifelse(rank_choice_data()$Preference_1==as.character(first_round_loser), 
+    #                               rank_choice_data()$Preference_2, 
+    #                               rank_choice_data()$Preference_1)
+    #   second_round_results <- aggregate(second_round_data, by=list(second_round_data), length) %>% 
+    #     rename("Candidate" = "Group.1",
+    #            "Votes" = "x")
+    #   second_round_results <- second_round_results %>% 
+    #     arrange(desc(as.numeric(Votes)))
+    #   second_round_leader <- second_round_results[1,2]
+    #   second_round_loser <- tail(second_round_results,1)[1]
+    # }
+    
     
     
   })
@@ -675,6 +735,32 @@ server <- shinyServer(function(input, output){
   # Create plots
   pt1_plurality <- reactive({
     if (!input$voting_system=='plurality') return(NULL)
+    ggplot() +
+      # Add voter data points
+      geom_point(data=rank_choice_data(), 
+                 aes(x=Voter_Dim_1(), y=Voter_Dim_2(), 
+                     size=1.1, alpha=.95, color=factor(Preference_1 ))) +  
+      # Add candidate data points
+      geom_point(data=candidateData(),
+                 aes(x=Candidate_Dim_1(), y=Candidate_Dim_2(),
+                     size=1.3, alpha=.9, color=Candidate_Names())) +
+      # Add candidate labels
+      annotate("text", x=Candidate_Dim_1(), y=Candidate_Dim_2()+1, label=as.character(Candidate_Names()),
+               fontface=2, hjust=.5, color='#000000') +
+      # theme changes
+      theme_bw()+
+      theme(legend.position = "none",
+            panel.grid.major = element_blank(),
+            panel.grid.minor = element_blank()) +
+      # axis scaling
+      scale_x_continuous(limits=c(-100,100)) +
+      scale_y_continuous(limits=c(-100,101)) +
+      # label axes
+      labs(x="Economic Scale", y="Social Scale", title='Voter & Candidates Political Leanings')
+  })
+  
+  pt1_ranked_choice <- reactive({
+    if (!input$voting_system=='ranked_choice') return(NULL)
     ggplot() +
       # Add voter data points
       geom_point(data=rank_choice_data(), 
@@ -724,7 +810,7 @@ server <- shinyServer(function(input, output){
       # label axes
       labs(x="Economic Scale", y="Social Scale", title='Voter & Candidates Political Leanings')
   })
-
+  
   # functions for drawing circles
   draw_circles <- reactive({
     data.frame(
@@ -772,7 +858,8 @@ server <- shinyServer(function(input, output){
       scale_x_continuous(limits=c(-151,151)) +
       scale_y_continuous(limits=c(-151,151)) +
       # label axes
-      labs(x="Economic Scale", y="Social Scale", title='Voter & Candidates Political Leanings')
+      labs(x="Economic Scale", y="Social Scale", title='Voter & Candidates Political Leanings') +
+      coord_cartesian(ylim = c(-100, 100), xlim = c(-100,100)) # this line 'zooms' in plot view so that entire circles can be drawn, and latter cropped
   })
   
   pt2_plurality <- reactive({
@@ -794,7 +881,27 @@ server <- shinyServer(function(input, output){
       # add dotted line at 50% mark
       geom_hline(yintercept = round(input$total_voters)/2, 0, linetype='dashed')
   })
-
+  
+  pt2_ranked_choice <- reactive({
+    if (!input$voting_system=='ranked_choice') return(NULL)
+    ggplot()+
+      geom_bar(data=plurality_summary_table(), stat='identity', aes(x=as.integer(as.character(Candidate)), y=Votes, fill=factor(Candidate))) +
+      # theme changes
+      theme_bw()+
+      theme(legend.position = "none",
+            panel.grid.major = element_blank(),
+            panel.grid.minor = element_blank()) +
+      # label axes
+      labs(title='Ranked-Choice Results', x='Candidates') +
+      # scale y-axis based on vote total
+      scale_y_continuous(limits=c(0,input$total_voters)) +
+      #scale x-axis based on # of candidates
+      scale_x_continuous(labels=Candidate_Names(), 
+                         breaks=as.integer(as.character(Candidate_Names()))) +
+      # add dotted line at 50% mark
+      geom_hline(yintercept = round(input$total_voters)/2, 0, linetype='dashed')
+  })
+  
   # note: similarity score is max distance score ("282.8427") - average(distance) [this is so most similar scores (low #'s) are highest bars] 
   pt2_score <- reactive({
     if (!input$voting_system=='score') return(NULL)
@@ -811,9 +918,9 @@ server <- shinyServer(function(input, output){
       scale_y_continuous(limits=c(0,300)) +
       scale_x_continuous(labels=Candidate_Names(), 
                          breaks=as.integer(as.character(Candidate_Names())))
-
+    
   })
-
+  
   pt2_approval <- reactive({
     if (!input$voting_system=='approval') return(NULL)
     ggplot()+
@@ -829,12 +936,13 @@ server <- shinyServer(function(input, output){
       scale_y_continuous(limits=c(0,input$total_voters)) +
       scale_x_continuous(labels=Candidate_Names(),
                          breaks=as.integer(as.character(Candidate_Names())))
-
+    
   })
-
+  
   # render plots
   output$plotgraph = renderPlot({
     ptlist <- list(pt1_plurality(), pt2_plurality(),
+                   pt1_ranked_choice(), pt2_ranked_choice(),
                    pt1_score(), pt2_score(),
                    pt1_approval(), pt2_approval())
     to_delete <- !sapply(ptlist,is.null)
@@ -843,21 +951,17 @@ server <- shinyServer(function(input, output){
     grid.arrange(grobs=ptlist,
                  ncol=2)
   })
-
-  # observeEvent(input$candidate_count,
-  #              print(candidate_approval_function()))
-  # #              # print(Candidate_Names()[1:3]))
-               # print(rank_choice_data()))
-  #              # print(voterData()))
-               # print(combined_data()))
-
+  
+  
   observeEvent(rank_choice_data(),
-               # print(rank_choice_data()[3:(2+input$candidate_count)]))
-               print(ranked_choice_data_processing()))
+               # print(rank_choice_data()))
+               print(combined_data()))
   # observeEvent(rank_choice_data(),
-  #              print(Candidate_Names()))
-               # print(candidateData()[,1,1]))
-               # print(approval_summary_table()))
+  #              # print(rank_choice_data()[3:(2+input$candidate_count)]))
+  #              print(ranked_choice_data_processing()))
+  
+  # print(candidateData()[,1,1]))
+  # print(approval_summary_table()))
   #              # print(mean(rank_choice_data()[,3,1])))
   
 })
