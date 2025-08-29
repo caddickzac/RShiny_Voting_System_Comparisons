@@ -1,4 +1,4 @@
-# app.R — Simulated Voting System Outcome Comparisons (RCV stacks fixed via geom_rect)
+# app.R — Simulated Voting System Outcome Comparisons (RCV tiebreak = Borda-like, then alphabetical)
 
 library(shiny)
 library(tidyverse)
@@ -50,11 +50,24 @@ add_bar_value_labels <- function(p, data, x_col, y_col, max_y, digits = 0) {
                 inherit.aes = FALSE)
 }
 
-# RCV engine with explicit final 2-way tie
-rcv_irv <- function(rank_mat, mean_dist_per_cand) {
+top_choice_given_active <- function(rank_mat, active_mask) {
+  apply(rank_mat, 1, function(row) { for (j in seq_along(row)) { id <- row[j]; if (active_mask[id]) return(id) } ; NA_integer_ })
+}
+
+# -------------- RCV with Borda-like tiebreaker, then alphabetical --------------
+
+rcv_irv <- function(rank_mat) {
   K <- ncol(rank_mat); N <- nrow(rank_mat)
   active <- rep(TRUE, K); majority <- floor(N/2) + 1
   rounds <- list(); eliminated <- integer()
+  
+  # Precompute Borda-like scores once (sum over all voters of K - position)
+  # Lower score = less overall support
+  pos_matrix <- matrix(0L, nrow = N, ncol = K)
+  for (i in seq_len(N)) {
+    pos_matrix[i, rank_mat[i, ]] <- seq_len(K)  # position of each candidate in voter i's ranking (1=best)
+  }
+  borda_scores <- colSums(K - pos_matrix)  # numeric vector length K
   
   top_active <- function(act = active) {
     apply(rank_mat, 1, function(row) { for (j in seq_len(K)) { id <- row[j]; if (act[id]) return(id) } ; NA_integer_ })
@@ -65,6 +78,7 @@ rcv_irv <- function(rank_mat, mean_dist_per_cand) {
     top <- top_active(active)
     counts <- tabulate(top, nbins = K); counts[!active] <- 0
     
+    # Two-candidate exact tie => declare tie and stop
     if (sum(active) == 2L) {
       idx <- which(active)
       if (counts[idx[1]] == counts[idx[2]]) {
@@ -77,51 +91,65 @@ rcv_irv <- function(rank_mat, mean_dist_per_cand) {
     rounds[[r]] <- list(counts = counts, active = active,
                         eliminated = if (r == 1) NA_integer_ else eliminated[r - 1])
     
+    # Winner by majority or only one active remains
     if (max(counts) >= majority || sum(active) == 1L) {
       return(list(winner_index = which.max(counts), tie_indices = integer(0), rounds = rounds))
     }
     
-    min_count <- min(counts[active]); cand_min <- which(counts == min_count & active)
-    elim <- if (length(cand_min) == 1) cand_min else {
-      md <- mean_dist_per_cand[cand_min]; tied <- cand_min[md == max(md)]
-      if (length(tied) > 1) min(tied) else tied
+    # Eliminate the lowest tally; break ties by (1) lowest Borda, (2) alphabetical (lowest index)
+    min_count <- min(counts[active])
+    cand_min <- which(counts == min_count & active)
+    
+    elim <- if (length(cand_min) == 1) {
+      cand_min
+    } else {
+      tied_borda <- borda_scores[cand_min]
+      worst <- cand_min[tied_borda == min(tied_borda)]
+      if (length(worst) > 1) min(worst) else worst
     }
-    active[elim] <- FALSE; eliminated[r] <- elim; r <- r + 1
+    
+    active[elim] <- FALSE
+    eliminated[r] <- elim
+    r <- r + 1
   }
-}
-
-top_choice_given_active <- function(rank_mat, active_mask) {
-  apply(rank_mat, 1, function(row) { for (j in seq_along(row)) { id <- row[j]; if (active_mask[id]) return(id) } ; NA_integer_ })
 }
 
 # ---------------- UI ----------------
 
 ui <- fluidPage(
-  titlePanel("Simulated Voting System Outcome Comparisons"),
-  sidebarPanel(
-    numericInput("total_voters", HTML("Number of voters: <span style='font-weight:normal'>(max=500)</span>"),
-                 value = 30, min = 1, max = 500),
-    numericInput("candidate_count", HTML("Number of candidates: <span style='font-weight:normal'>(max=20)</span>"),
-                 value = 3, min = 2, max = 20),
-    selectInput("voting_system", "See full results:",
-                c("Plurality"="plurality","Ranked-Choice"="ranked_choice",
-                  "Approval"="approval","Cardinal (Score)"="score")),
-    conditionalPanel("input.voting_system == 'approval'",
-                     sliderInput("approval_thresh","Approval distance threshold", min=5,max=150,value=50,step=5)
-    ),
-    actionButton("randomize", "Randomize"),
-    conditionalPanel("input.voting_system == 'ranked_choice'",
-                     hr(),
-                     tags$div("View RCV rounds", style="font-weight:bold;margin-bottom:.25rem;"),
-                     tags$div(style="display:flex;gap:.5rem;align-items:center;",
-                              actionButton("prev_round","◀"),
-                              actionButton("next_round","▶"),
-                              tags$div(textOutput("rcv_round_label"), style="margin-left:.5rem;font-weight:bold;")
-                     )
-    )
+  tags$head(
+    # nudge so main panel starts flush with sidebar
+    tags$style(HTML("
+      .main-panel { padding-top: 0 !important; }
+    "))
   ),
-  mainPanel(
-    column(6, plotOutput("plotgraph", width="1000px", height="700px"))
+  titlePanel("Simulated Voting System Outcome Comparisons"),
+  sidebarLayout(
+    sidebarPanel(
+      numericInput("total_voters", HTML("Number of voters: <span style='font-weight:normal'>(max=500)</span>"),
+                   value = 30, min = 1, max = 500),
+      numericInput("candidate_count", HTML("Number of candidates: <span style='font-weight:normal'>(max=20)</span>"),
+                   value = 3, min = 2, max = 20),
+      selectInput("voting_system", "See full results:",
+                  c("Plurality"="plurality","Ranked-Choice"="ranked_choice",
+                    "Approval"="approval","Cardinal (Score)"="score")),
+      conditionalPanel("input.voting_system == 'approval'",
+                       sliderInput("approval_thresh","Approval distance threshold", min=5,max=150,value=50,step=5)
+      ),
+      actionButton("randomize", "Randomize"),
+      conditionalPanel("input.voting_system == 'ranked_choice'",
+                       hr(),
+                       tags$div("View RCV rounds", style="font-weight:bold;margin-bottom:.25rem;"),
+                       tags$div(style="display:flex;gap:.5rem;align-items:center;",
+                                actionButton("prev_round","◀"),
+                                actionButton("next_round","▶"),
+                                tags$div(textOutput("rcv_round_label"), style="margin-left:.5rem;font-weight:bold;")
+                       )
+      )
+    ),
+    mainPanel(class = "main-panel", style = "padding-top:0;margin-top:0;",
+              plotOutput("plotgraph", width="1000px", height="700px")
+    )
   )
 )
 
@@ -177,8 +205,8 @@ server <- function(input, output, session) {
   })
   
   rcv_out <- reactive({
-    D <- dist_matrix(); rm <- rank_matrix(); md <- colMeans(D)
-    rcv_irv(rm, md)
+    rm <- rank_matrix()
+    rcv_irv(rm)
   })
   rcv_round <- reactiveVal(1)
   observeEvent(list(input$randomize, input$total_voters, input$candidate_count), { rcv_round(1) }, ignoreInit = FALSE)
@@ -225,7 +253,8 @@ server <- function(input, output, session) {
       theme(panel.grid.major=element_blank(),
             panel.grid.minor=element_blank(),
             aspect.ratio=1) +
-      labs(x="Economic Scale", y="Social Scale")
+      labs(title = "Voter & Candidate Positions",
+           x="Economic Scale", y="Social Scale")
   }
   map_default  <- reactive({ map_plot_generic(pref1()) })
   map_rcv      <- reactive({
@@ -251,7 +280,8 @@ server <- function(input, output, session) {
       theme(panel.grid.major=element_blank(),
             panel.grid.minor=element_blank(),
             aspect.ratio=1) +
-      labs(x="Economic Scale", y="Social Scale")
+      labs(title = "Voter & Candidate Positions",
+           x="Economic Scale", y="Social Scale")
   })
   
   # ---------- RCV composition helper ----------
@@ -445,7 +475,7 @@ server <- function(input, output, session) {
     
     # final-round center winner/tie text
     if (r == length(rounds)) {
-      winners <- if (final_tie) C$id[out$tie_indices] else C$id[out$winner_index]
+      winners <- if (is.na(out$winner_index)) C$id[out$tie_indices] else C$id[out$winner_index]
       p <- add_winner_text_center(p, winners, dest_levels, input$total_voters)
     }
     p
