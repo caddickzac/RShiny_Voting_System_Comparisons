@@ -22,6 +22,29 @@ candidate_palette <- c(
            "#E5C494", "#B3B3B3", "#1B9E77", "#D95F02", "#7570B3"
 )
 
+# ---- political compass pole labels (for maps) ----
+add_pole_labels <- function(p,
+                            x_min = -100, x_max = 100,
+                            y_min = -100, y_max = 100,
+                            off_bottom = 8,  # how far below x-axis (data units)
+                            off_left   = 15  # how far left of y-axis (data units)
+) {
+  p +
+    # x-axis poles (just below the x axis)
+    annotate("text", x = x_min, y = y_min - off_bottom,
+             label = "Left",  hjust = 0, vjust = 1, size = 3.6, fontface = 2, color = "grey25") +
+    annotate("text", x = x_max, y = y_min - off_bottom,
+             label = "Right", hjust = 1, vjust = 1, size = 3.6, fontface = 2, color = "grey25") +
+    # y-axis poles (to the left of the y axis, vertical)
+    annotate("text", x = x_min - off_left, y = y_max,
+             label = "Authoritarian", angle = 90, hjust = 1, vjust = 1,
+             size = 3.6, fontface = 2, color = "grey25") +
+    annotate("text", x = x_min - off_left, y = y_min,
+             label = "Libertarian",   angle = 90, hjust = 0, vjust = 0,
+             size = 3.6, fontface = 2, color = "grey25")
+}
+
+
 max_dist <- sqrt(200^2 + 200^2)  # 282.8427
 rank_by_distance <- function(D) t(apply(D, 1, order))
 
@@ -42,24 +65,40 @@ add_winner_text_center <- function(p, winners, x_levels, max_y) {
                label = msg, fontface = 2, color = "black")
 }
 
-# 50% line + right-edge label (discrete x)
-add_half_line_discrete <- function(p, y50, x_levels, lbl = "50%") {
+# Discrete-x plots (plurality, approval)
+add_half_line_discrete <- function(p, y50, ..., lbl = "50%",
+                                   pad_frac = 0.01, pad_min = 0.3) {
+  ymax <- y50 * 2
+  pad  <- max(pad_frac * ymax, pad_min)   # how far above the line
+  
   p +
     geom_hline(yintercept = y50, linetype = "dashed", color = "grey55", alpha = .7) +
-    annotate("text",
-             x = tail(x_levels, 1), y = y50,
-             label = lbl, color = "grey30", alpha = .7, # zc
-             hjust = -2.5, vjust = -0.3)
+    annotate(
+      "text",
+      x = Inf, y = y50 + pad,              # just ABOVE the line
+      label = lbl, color = "grey30", alpha = .7,
+      angle = 90,                          # vertical
+      hjust = 0,                           # hug inside right edge
+      vjust = -.5                            # bottom of text at y position
+    )
 }
 
-# 50% line + right-edge label (continuous x)
-add_half_line_cont <- function(p, y50, xmax, lbl = "50%") {
+# Continuous-x plots (RCV)
+add_half_line_cont <- function(p, y50, ..., lbl = "50%",
+                               pad_frac = 0.01, pad_min = 0.3) {
+  ymax <- y50 * 2
+  pad  <- max(pad_frac * ymax, pad_min)
+  
   p +
     geom_hline(yintercept = y50, linetype = "dashed", color = "grey55", alpha = .7) +
-    annotate("text",
-             x = xmax, y = y50,
-             label = lbl, color = "grey30", alpha = .7,
-             hjust = 1.02, vjust = -0.3)
+    annotate(
+      "text",
+      x = Inf, y = y50 + pad,
+      label = lbl, color = "grey30", alpha = .7,
+      angle = 90,
+      hjust = 0,
+      vjust = -.5
+    )
 }
 
 # Put every bar label at the same low baseline (uniform placement)
@@ -159,6 +198,10 @@ ui <- fluidPage(
 
   /* Trim ggplot's outer whitespace so the figure top hugs the container */
   .main-panel .plot-container { padding-top: 0 !important; }
+  .dataTables_wrapper .dataTables_scrollHead table,
+  .dataTables_wrapper .dataTables_scrollBody table {
+    width: 100% !important;
+  }
 "))),
   titlePanel("Simulated Voting System Outcome Comparisons"),
   sidebarLayout(
@@ -173,7 +216,7 @@ ui <- fluidPage(
       conditionalPanel("input.voting_system == 'approval'",
                        sliderInput("approval_thresh","Approval distance threshold", min=5,max=150,value=50,step=5)
       ),
-      actionButton("randomize", "Randomize"),
+      actionButton("randomize", "Randomize Data"),
       checkboxInput("show_voter_data", "Show Voter Data", value = FALSE),
       checkboxInput("show_results_table", "Show results table", value = FALSE),
       conditionalPanel("input.voting_system == 'ranked_choice'",
@@ -187,7 +230,7 @@ ui <- fluidPage(
       )
     ),
     mainPanel(class = "main-panel", style = "padding-top:0;margin-top:0;",
-              plotOutput("plotgraph", width="100%", height="700px"), # zc
+              plotOutput("plotgraph", width="100%", height="560px"),
               conditionalPanel("input.show_voter_data",
                                tags$hr(),
                                h4("Voter Data"),
@@ -196,7 +239,7 @@ ui <- fluidPage(
               conditionalPanel("input.show_results_table",
                                tags$hr(),
                                h4("Results by Voting System"),
-                               DTOutput("results_dt")
+                               DTOutput("results_dt", width = "100%")
               )
     )
   )
@@ -273,6 +316,11 @@ server <- function(input, output, session) {
     df_c <- C; df_c$alpha <- 1
     if (rcv_mode && !is.null(active_mask)) df_c$alpha <- ifelse(active_mask, 1, 0.25)
     
+    x_breaks <- c(-100, -50, 0, 50, 100)
+    x_labels <- c("-100", "-50", "0", "50", "")   # hide "100"; we’ll draw it ourselves
+    y_min    <- -100
+    off      <- 6
+    
     g <- ggplot() +
       geom_point(data = V, aes(x=x, y=y, color=factor(current_choice_ids)), size=1.8, alpha=0.9) +
       geom_text(data = df_c, aes(x=x, y=y, label=id, color=id, alpha=alpha),
@@ -292,18 +340,28 @@ server <- function(input, output, session) {
       }
     }
     
-    g +
+    p <- g +
       scale_color_manual(values = pal, guide="none") +
       scale_alpha_identity() +
-      coord_fixed(xlim=c(-100,100), ylim=c(-100,100), expand=FALSE) +
-      scale_x_continuous(expand = expansion(mult=c(0.02,0.02))) +
+      coord_fixed(xlim=c(-100,100), ylim=c(-100,100), expand=FALSE, clip = "off") +
+      scale_x_continuous(breaks = x_breaks, labels = x_labels,
+                         expand = expansion(mult=c(0.02,0.02))) +
       scale_y_continuous(expand = expansion(mult=c(0.02,0.02))) +
       theme_bw() +
       theme(panel.grid.major=element_blank(),
             panel.grid.minor=element_blank(),
-            aspect.ratio=1) +
+            aspect.ratio=1,
+            # give room for the outside pole labels
+            plot.margin = margin(t = 5, r = 10, b = 28, l = 32)) +
       labs(title = "Voter & Candidate Positions",
-           x="Economic Scale", y="Social Scale")
+           x="Economic Scale", y="Social Scale") +
+      # custom right-aligned “100”
+      annotate("text", x = 100, y = y_min - off, label = "100",
+               hjust = 1, vjust = -.5, size = 3)
+    
+    # add “Left/Right” and vertical “Authoritarian/Libertarian”
+    p <- add_pole_labels(p)
+    p
   }
   map_default  <- reactive({ map_plot_generic(pref1()) })
   map_rcv      <- reactive({
@@ -316,21 +374,26 @@ server <- function(input, output, session) {
     pal <- setNames(candidate_palette[seq_len(nrow(C))], C$id)
     inside_any <- apply(D <= thr, 1, any)
     V$color_id <- pref1(); V$alpha <- ifelse(inside_any, 0.9, 0.3)
-    ggplot() +
+    
+    p <- ggplot() +
       geom_point(data=V, aes(x=x, y=y, color=factor(color_id), alpha=alpha), size=1.8) +
       geom_text(data=C, aes(x=x, y=y, label=id, color=id), fontface=2, size=6, show.legend=FALSE) +
       geom_circle(data=C, aes(x0=x, y0=y, r=thr, color=id), alpha=0.25, inherit.aes=FALSE) +
       scale_color_manual(values=pal, guide="none") +
       scale_alpha_identity() +
-      coord_fixed(xlim=c(-100,100), ylim=c(-100,100), expand=FALSE) +
+      coord_fixed(xlim=c(-100,100), ylim=c(-100,100), expand=FALSE, clip = "off") +
       scale_x_continuous(expand = expansion(mult=c(0.02,0.02))) +
       scale_y_continuous(expand = expansion(mult=c(0.02,0.02))) +
       theme_bw() +
       theme(panel.grid.major=element_blank(),
             panel.grid.minor=element_blank(),
-            aspect.ratio=1) +
+            aspect.ratio=1,
+            plot.margin = margin(t = 5, r = 10, b = 28, l = 32)) +
       labs(title = "Voter & Candidate Positions",
            x="Economic Scale", y="Social Scale")
+    
+    p <- add_pole_labels(p)
+    p
   })
   
   # ---------- RCV composition helper ----------
@@ -541,6 +604,7 @@ server <- function(input, output, session) {
       winners <- if (is.na(out$winner_index)) candidateData()$id[out$tie_indices] else candidateData()$id[out$winner_index]
       p <- add_winner_text_center(p, winners, dest_levels, input$total_voters)
     }
+    p <- add_pole_labels(p)
     p
   })
   
@@ -644,16 +708,17 @@ server <- function(input, output, session) {
     
     datatable(
       df,
+      class   = "display nowrap compact",
       options = list(
         pageLength = 10,
         scrollX    = TRUE,
         autoWidth  = TRUE,
         columnDefs = list(
-          list(width = "9ch",  targets = 0),                        # Candidate
-          list(width = "9ch",  className = "dt-center", targets = 1),  # Plurality
-          list(width = "13ch", className = "dt-center", targets = 2),  # Ranked-Choice
-          list(width = "9ch",  className = "dt-center", targets = 3),  # Approval
-          list(width = "16ch", className = "dt-center", targets = 4)   # Cardinal (Score)
+          list(width = "90px",  targets = 0),                      # Candidate
+          list(width = "90px",  className = "dt-center", targets = 1),  # Plurality
+          list(width = "130px", className = "dt-center", targets = 2),  # Ranked-Choice
+          list(width = "90px",  className = "dt-center", targets = 3),  # Approval
+          list(width = "150px", className = "dt-center", targets = 4)   # Cardinal (Score)
         )
       ),
       rownames = FALSE
