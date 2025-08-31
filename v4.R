@@ -216,9 +216,9 @@ ui <- fluidPage(
         choices = c("1-dimension", "2-dimension"),
         selected = "1-dimension"
       ),
-      numericInput("total_voters", HTML("Number of voters: <span style='font-weight:normal'>(max=500)</span>"),
-                   value = 30, min = 1, max = 500),
-      numericInput("candidate_count", HTML("Number of candidates: <span style='font-weight:normal'>(max=20)</span>"),
+      numericInput("total_voters", HTML("Number of voters: (max=500)"),
+                   value = 11, min = 1, max = 500),
+      numericInput("candidate_count", HTML("Number of candidates: (max=20)"),
                    value = 3, min = 2, max = 20),
       selectInput("voting_system", "See full results:",
                   c("Plurality"="plurality","Ranked-Choice"="ranked_choice",
@@ -300,13 +300,13 @@ server <- function(input, output, session) {
       session, "total_voters",
       max   = vm,
       value = min(max(tv, 1), vm),
-      label = HTML(sprintf("Number of voters: <span style='font-weight:normal'>(max=%d)</span>", vm))
+      label = HTML(sprintf("Number of voters: (max=%d)", vm))
     )
     updateNumericInput(
       session, "candidate_count",
       max   = cm,
       value = min(max(cc, 2), cm),
-      label = HTML(sprintf("Number of candidates: <span style='font-weight:normal'>(max=%d)</span>", cm))
+      label = HTML(sprintf("Number of candidates: (max=%d)", cm))
     )
   })
   
@@ -406,62 +406,67 @@ server <- function(input, output, session) {
     )
     
     # how far to extend the panel beyond [-100, 100]
-    x_left  <- -130
+    x_left  <- -140
     x_right <-  105
     y_top   <-  10
     y_bottom<- -10
     
     ggplot() +
       # (optional) top/bottom frame lines to emphasize the box
-      annotate("segment", x = x_left, xend = x_right, y =  y_top, yend =  y_top, colour = "black", linewidth = 0.8) +
-      annotate("segment", x = x_left, xend = x_right, y = y_bottom, yend = y_bottom, colour = "black", linewidth = 0.8) +
+      annotate("segment", x = x_left-45, xend = x_right+35, y =  1.5, yend =  1.5, colour = "black", linewidth = 0.8) + # top line
+      annotate("segment", x = x_left-45, xend = x_right+35, y = -1.7, yend = -1.7, colour = "black", linewidth = 0.8) + # bottom line
+      annotate("segment", x = x_left-45, xend = x_left-45, y = -1.7, yend = 1.5, colour = "black", linewidth = 0.8) + # left line
+      annotate("segment", x = x_right+35, xend = x_right+35, y = -1.7, yend = 1.5, colour = "black", linewidth = 0.8) + # right line
+      annotate("segment", x = -100, xend = -100, y = -1.7, yend = -1.9, colour = "black", linewidth = 0.8) + # notch 1
+      annotate("segment", x = 0, xend = 0, y = -1.7, yend = -1.9, colour = "black", linewidth = 0.8) + # notch 2
+      annotate("segment", x = 100, xend = 100, y = -1.7, yend = -1.9, colour = "black", linewidth = 0.8) + # notch 3
       
       # --- left-side key/labels -------------------------------------------------
-    annotate("text", x = x_left + 3, y =  2.2, label = "atop(bold(Candidates))",
-             hjust = 0, fontface = 2, colour = "#59A4F0") +
-      annotate("text", x = x_left + 3, y = -1.8, label = "Voter",
-               hjust = 0, fontface = 2, colour = "black") +
-      annotate("text", x = x_left + 3, y = -3.6, label = "Preferences",
-               hjust = 0, fontface = 2, colour = "black") +
-      annotate("segment", x = x_left + 3, xend = -100, y = 0, yend = 0, colour = "grey55") +
+    annotate("text", x = x_left - 35, y =  .1, label = 'atop(bold("Candidates"))',
+             hjust = 0, fontface = 2, colour = "#59A4F0", size=4.7, parse = TRUE) +
+      annotate("text", x = x_left -35, y = -.4, label = "Voter",
+               hjust = 0, fontface = 2, colour = "black", size=4.7) +
+      annotate("text", x = x_left -35 , y = -.8, label = "Preferences",
+               hjust = 0, fontface = 2, colour = "black", size=4.7) +
+      annotate("segment", x = x_left + -35, xend = -110, y = 0, yend = 0, colour = "#BEBEBE", linewidth = 2) +
       
       # --- main axis ------------------------------------------------------------
-    annotate("segment", x = -100, xend = 100, y = 0, yend = 0, colour = "grey60", linewidth = 2) +
-      annotate("segment", x = -100, xend = -100, y = -3, yend = 3, colour = "grey60", linewidth = 2) +
-      annotate("segment", x =  100, xend =  100, y = -3, yend = 3, colour = "grey60", linewidth = 2) +
+    annotate("segment", x = -100, xend = 100, y = 0, yend = 0, colour = "#BEBEBE", linewidth = 2) +
+      annotate("segment", x = -100, xend = -100, y = -.9, yend = .9, colour = "#BEBEBE", linewidth = 2) +
+      annotate("segment", x =  100, xend =  100, y = -.9, yend = .9, colour = "#BEBEBE", linewidth = 2) +
       
       # voters (ticks below the axis), coloured by nearest candidate
       geom_segment(
         data = voters_col, aes(x = x, xend = x, colour = nearest),
-        y = -2, yend = -0.1, linewidth = 1.1, inherit.aes = FALSE
+        y = -.5, yend = -0.05, linewidth = 1.1, inherit.aes = FALSE
       ) +
       
       # candidates (ticks above the axis) in fixed blue, labels in palette colours
       geom_segment(
         data = C,
-        aes(x = x, xend = x), y = 0.1, yend = 2,
+        aes(x = x, xend = x), y = 0.05, yend = .5,
         colour = "#59A4F0", linewidth = 1.1, inherit.aes = FALSE
       ) +
       geom_text(
-        data = C, aes(x = x, y = 3, label = id, colour = id),
-        fontface = 2, size = 5, inherit.aes = FALSE
+        data = C, aes(x = x, y = .8, label = id, colour = id),
+        fontface = 2, size = 8, inherit.aes = FALSE
       ) +
       
       # numbers & words under the axis
-      annotate("text", x = -100, y = -4, label = "-100", fontface = 2, colour = "grey40", size = 3, hjust = 0) +
-      annotate("text", x =    0, y = -4, label =   "0", fontface = 2, colour = "grey40", size = 3, hjust = .5) +
-      annotate("text", x =  100, y = -4, label =  "100", fontface = 2, colour = "grey40", size = 3, hjust = 1) +
-      annotate("text", x = -100, y = -5, label = "Liberal",      colour = "grey30", size = 3.2, fontface = 2, hjust = 0) +
-      annotate("text", x =    0, y = -5, label = "Moderate",     colour = "grey30", size = 3.2, fontface = 2, hjust = .5) +
-      annotate("text", x =  100, y = -5, label = "Conservative", colour = "grey30", size = 3.2, fontface = 2, hjust = 1) +
-      annotate("text", x =    0, y = -7, label = "Political Leaning",
-               colour = "black", size = 4.0, fontface = 2, hjust = .5) +
+      annotate("text", x = -100, y = -1.4, label = "-100", fontface = 2, colour = "grey40", size = 5, hjust = .5) +
+      annotate("text", x =    0, y = -1.4, label =   "0", fontface = 2, colour = "grey40", size = 5,  hjust = .5) +
+      annotate("text", x =  100, y = -1.4, label =  "100", fontface = 2, colour = "grey40", size = 5, hjust = .5) +
+      annotate("text", x = -100, y = -2.2, label = "Liberal",      colour = "grey30", size = 5, fontface = 2, hjust = .5) +
+      annotate("text", x =    0, y = -2.2, label = "Moderate",     colour = "grey30", size = 5, fontface = 2, hjust = .5) +
+      annotate("text", x =  100, y = -2.2, label = "Conservative", colour = "grey30", size = 5, fontface = 2, hjust = .5) +
+      annotate("text", x =    0, y = -3, label = "Political Leaning",
+               colour = "black", size = 9,  hjust = .5) +
       
       # colouring for voters and candidate labels
       scale_colour_manual(values = pal, guide = "none") +
       
       # IMPORTANT: expand panel so left labels are inside the plotting area
-      coord_cartesian(xlim = c(x_left, x_right), ylim = c(-7.5, 5.5), clip = "off") +
+      coord_cartesian(xlim = c(x_left-45, x_right+35), ylim = c(-7.5, 5.5), clip = "off") +
       
       theme_bw() +
       theme(
