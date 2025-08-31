@@ -60,11 +60,11 @@ make_1d_strip <- function(V, C, top_choice_ids, active_mask = rep(TRUE, nrow(C))
     
     # voters as ticks below axis (coloured by nearest)
     geom_segment(data = voters_col, aes(x = x, xend = x, colour = nearest),
-                 y = -.5, yend = -0.03, linewidth = 1.1, inherit.aes = FALSE) +
+                 y = -.5, yend = -0.03, linewidth = 1, inherit.aes = FALSE) +
     
     # candidate ticks above axis in fixed blue (faded if eliminated)
     geom_segment(data = df_c, aes(x = x, xend = x, alpha = alpha),
-                 y = 0.03, yend = .5, colour = "#59A4F0", linewidth = 1.1, inherit.aes = FALSE) +
+                 y = 0.03, yend = .5, colour = "#59A4F0", linewidth = 1, inherit.aes = FALSE) +
     
     # candidate letters (palette colours; faded if eliminated)
     geom_text(data = df_c, aes(x = x, y = .8, label = id, colour = id, alpha = alpha),
@@ -116,12 +116,169 @@ make_1d_strip <- function(V, C, top_choice_ids, active_mask = rep(TRUE, nrow(C))
   p
 }
 
+# ---- 1D Approval strip: shaded boxes instead of circles ----
+make_1d_strip_approval <- function(V, C, thr, top_choice_ids, inside_any,
+                                   box_alpha = 0.18, bracket_lwd = 0.25) {
+  pal <- setNames(candidate_palette[seq_len(nrow(C))], C$id)
+  
+  # voters: color by nearest; fade if they approve nobody
+  voters_col <- tibble(
+    x       = V$x,
+    nearest = factor(top_choice_ids, levels = C$id),
+    alpha   = ifelse(inside_any, 1, 0.35)
+  )
+  
+  # approval rectangles (clamped to axis span)
+  rect_df <- C |>
+    transmute(
+      id,
+      xmin = pmax(x - thr, -101),
+      xmax = pmin(x + thr,  101),
+      ymin = -0.5,  # bottom of voter line
+      ymax =  0.5   # top of candidate line
+    )
+  
+  # U-bracket segments (top + left + right)
+  seg_top   <- rect_df |> transmute(id, x = xmin, xend = xmax, y = ymax,    yend = ymax)
+  seg_left  <- rect_df |> transmute(id, x = xmin, xend = xmin, y = ymin+.7, yend = ymax)
+  seg_right <- rect_df |> transmute(id, x = xmax, xend = xmax, y = ymin+.7, yend = ymax)
+  
+  # panel extents to match your 1D layout
+  x_left  <- -140
+  x_right <-  105
+  
+  ggplot() +
+    # shaded approval box
+    geom_rect(
+      data = rect_df,
+      aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax, fill = id),
+      alpha = box_alpha, color = NA
+    ) +
+    # U-bracket overlay (thin, constant linewidth)
+    geom_segment(
+      data = seg_top,
+      aes(x = x, xend = xend, y = y, yend = yend, colour = id),
+      linewidth = bracket_lwd, lineend = "butt"
+    ) +
+    geom_segment(
+      data = seg_left,
+      aes(x = x, xend = xend, y = y, yend = yend, colour = id),
+      linewidth = bracket_lwd, lineend = "butt"
+    ) +
+    geom_segment(
+      data = seg_right,
+      aes(x = x, xend = xend, y = y, yend = yend, colour = id),
+      linewidth = bracket_lwd, lineend = "butt"
+    ) +
+    # frame + axis furniture
+    annotate("segment", x = x_left-45, xend = x_right+35, y =  1.5, yend =  1.5, colour = "black", linewidth = 0.8) +
+    annotate("segment", x = x_left-45, xend = x_right+35, y = -1.7, yend = -1.7, colour = "black", linewidth = 0.8) +
+    annotate("segment", x = x_left-45, xend = x_left-45, y = -1.7, yend =  1.5, colour = "black", linewidth = 0.8) +
+    annotate("segment", x = x_right+35, xend = x_right+35, y = -1.7, yend =  1.5, colour = "black", linewidth = 0.8) +
+    annotate("segment", x = -100, xend = -100, y = -1.7, yend = -1.9, colour = "black", linewidth = 0.8) +
+    annotate("segment", x =    0, xend =    0, y = -1.7, yend = -1.9, colour = "black", linewidth = 0.8) +
+    annotate("segment", x =  100, xend =  100, y = -1.7, yend = -1.9, colour = "black", linewidth = 0.8) +
+    annotate("text", x = x_left - 35, y =  .1, label = 'atop(bold("Candidates"))',
+             hjust = 0, fontface = 2, colour = "#59A4F0", size = 4.7, parse = TRUE) +
+    annotate("text", x = x_left - 35, y = -.4, label = "Voter",
+             hjust = 0, fontface = 2, colour = "black", size = 4.7) +
+    annotate("text", x = x_left - 35, y = -.8, label = "Preferences",
+             hjust = 0, fontface = 2, colour = "black", size = 4.7) +
+    annotate("segment", x = x_left - 35, xend = -110, y = 0, yend = 0, colour = "#BEBEBE", linewidth = 1) +
+    annotate("segment", x = -101, xend = 101, y = 0, yend = 0, colour = "#BEBEBE", linewidth = 1) +
+    annotate("segment", x = -101, xend = -101, y = -.7, yend =  .7, colour = "#BEBEBE", linewidth = 1) +
+    annotate("segment", x =  101, xend =  101, y = -.7, yend =  .7, colour = "#BEBEBE", linewidth = 1) +
+    # voters + candidate marks
+    geom_segment(
+      data = voters_col,
+      aes(x = x, xend = x, colour = nearest, alpha = alpha),
+      y = -.5, yend = -0.03, linewidth = 1.1, inherit.aes = FALSE
+    ) +
+    geom_segment(
+      data = C, aes(x = x, xend = x),
+      y = 0.03, yend = .5, colour = "#59A4F0", linewidth = 1.1, inherit.aes = FALSE
+    ) +
+    geom_text(
+      data = C, aes(x = x, y = .8, label = id, colour = id),
+      fontface = 2, size = 8, inherit.aes = FALSE
+    ) +
+    # labels under axis
+    annotate("text", x = -100, y = -1.4, label = "-100", fontface = 2, colour = "grey40", size = 5, hjust = .5) +
+    annotate("text", x =    0, y = -1.4, label =   "0",  fontface = 2, colour = "grey40", size = 5, hjust = .5) +
+    annotate("text", x =  100, y = -1.4, label = "100",  fontface = 2, colour = "grey40", size = 5, hjust = .5) +
+    annotate("text", x = -100, y = -2.2, label = "Liberal",      colour = "grey30", size = 5, fontface = 2, hjust = .5) +
+    annotate("text", x =    0, y = -2.2, label = "Moderate",     colour = "grey30", size = 5, fontface = 2, hjust = .5) +
+    annotate("text", x =  100, y = -2.2, label = "Conservative", colour = "grey30", size = 5, fontface = 2, hjust = .5) +
+    annotate("text", x =    0, y = -3,   label = "Political Leaning", colour = "black", size = 9, hjust = .5) +
+    scale_colour_manual(values = pal, guide = "none") +
+    scale_fill_manual(values = pal,  guide = "none") +
+    scale_alpha_identity() +
+    coord_cartesian(xlim = c(x_left - 45, x_right + 35), ylim = c(-7.5, 5.5), clip = "off") +
+    theme_bw() +
+    theme(
+      legend.position = "none",
+      axis.title = element_blank(), axis.text = element_blank(), axis.ticks = element_blank(),
+      panel.grid = element_blank(), plot.margin = margin(t = 5, r = 15, b = 28, l = 5)
+    ) +
+    labs(title = "Political Leaning (1-D)")
+}
+
+
+
+
+
+# sample integer positions with a minimum gap in "notches"
+# ensures |xi - xj| >= min_gap for all selected points
+sample_min_gap_int <- function(n, lo, hi, min_gap = 2) {
+  if (n < 1) return(integer(0))
+  pool <- lo:hi
+  if (n > length(pool)) stop("range too small for requested n")
+  sel <- integer(0)
+  while (length(sel) < n) {
+    if (!length(pool)) stop("Not enough positions for the requested min_gap.")
+    pick <- sample(pool, 1)
+    sel  <- c(sel, pick)
+    pool <- pool[abs(pool - pick) >= min_gap]  # prune neighbors that are too close
+  }
+  as.numeric(sort(sel))
+}
+
+
 #  rcv safeguard
 safe_round_index <- function(out, r) {
   if (length(out$rounds) == 0) return(1L)
   max(1L, min(r, length(out$rounds)))
 }
 
+# approval pole labeller 
+# approval pole labels — draw OUTSIDE the panel, matching other plots’ alignment
+add_pole_labels_outside <- function(p,
+                                    col = "grey25",
+                                    size_pt = 11,
+                                    fw = 2,
+                                    inset = 0.02) {  # inset as fraction of the canvas
+  cowplot::ggdraw(p) +
+    # bottom-left “Left” (left-justified, sits just above the bottom edge)
+    cowplot::draw_label("Left",
+                        x = inset, y = inset,
+                        hjust = -2.8, vjust = -4.2,
+                        colour = col, fontface = fw, size = size_pt) +
+    # bottom-right “Right” (right-justified)
+    cowplot::draw_label("Right",
+                        x = 1 - inset, y = inset,
+                        hjust = 1, vjust = -4.2,
+                        colour = col, fontface = fw, size = size_pt) +
+    # top-left vertical “Authoritarian” (top-aligned)
+    cowplot::draw_label("Authoritarian",
+                        x = inset, y = 1 - inset, angle = 90,
+                        hjust = 1.4, vjust = 4.5,
+                        colour = col, fontface = fw, size = size_pt) +
+    # bottom-left vertical “Libertarian” (bottom-aligned)
+    cowplot::draw_label("Libertarian",
+                        x = inset, y = inset, angle = 90,
+                        hjust = -.95, vjust = 4.5,
+                        colour = col, fontface = fw, size = size_pt)
+}
 
 # ---- political compass pole labels (for 2D maps) ----
 add_pole_labels <- function(p,
@@ -291,8 +448,11 @@ ui <- fluidPage(
       numericInput("candidate_count", "Number of candidates: (max=8)",
                    value = 3, min = 2, max = 8),
       selectInput("voting_system", "See full results:",
-                  c("Plurality"="plurality","Ranked-Choice"="ranked_choice",
-                    "Approval"="approval","Cardinal (Score)"="score")),
+                  c("Plurality"="plurality",
+                    "Ranked-Choice"="ranked_choice",
+                    "Approval"="approval",
+                    "Cardinal (Score)"="score",
+                    "Borda"="borda")),
       conditionalPanel("input.voting_system == 'approval'",
                        sliderInput("approval_thresh","Approval distance threshold",
                                    min=5,max=150,value=50,step=5)
@@ -367,27 +527,37 @@ server <- function(input, output, session) {
   # ---- downstream reactives ----
   voterData <- eventReactive(list(input$randomize, input$total_voters, input$example_type), {
     if (identical(input$example_type, "1-dimension")) {
-      tibble(x = rand_dimension_voters(input$total_voters),
-             y = rep(0, input$total_voters))
+      tibble(
+        x = sample_min_gap_int(input$total_voters, lo = -100, hi = 100, min_gap = 2),
+        y = rep(0, input$total_voters)
+      )
     } else {
-      tibble(x = rand_dimension_voters(input$total_voters),
-             y = rand_dimension_voters(input$total_voters))
+      tibble(
+        x = rand_dimension_voters(input$total_voters),
+        y = rand_dimension_voters(input$total_voters)
+      )
     }
   }, ignoreInit = FALSE)
+  
   
   candidate_ids <- reactive(LETTERS[seq_len(input$candidate_count)])
   
   candidateData <- eventReactive(list(input$randomize, input$candidate_count, input$example_type), {
     if (identical(input$example_type, "1-dimension")) {
-      tibble(x = rand_dimension_candidates(input$candidate_count),
-             y = rep(0, input$candidate_count),
-             id = candidate_ids())
+      tibble(
+        x  = sample_min_gap_int(input$candidate_count, lo = -98, hi = 98, min_gap = 2),
+        y  = rep(0, input$candidate_count),
+        id = candidate_ids()
+      )
     } else {
-      tibble(x = rand_dimension_candidates(input$candidate_count),
-             y = rand_dimension_candidates(input$candidate_count),
-             id = candidate_ids())
+      tibble(
+        x  = rand_dimension_candidates(input$candidate_count),
+        y  = rand_dimension_candidates(input$candidate_count),
+        id = candidate_ids()
+      )
     }
   }, ignoreInit = FALSE)
+  
   
   dist_matrix <- reactive({
     V <- voterData(); C <- candidateData()
@@ -417,6 +587,22 @@ server <- function(input, output, session) {
            value = c(approvals, didnt)) |> arrange(desc(value))
   })
   
+  borda_summary <- reactive({
+    rm <- rank_matrix()                # N x K, each row nearest -> farthest
+    K  <- ncol(rm); N <- nrow(rm)
+    
+    # For each voter, build a “position per candidate” row: 1..K
+    pos_matrix <- matrix(0L, nrow = N, ncol = K)
+    for (i in seq_len(N)) pos_matrix[i, rm[i, ]] <- seq_len(K)
+    
+    # Basic Borda: top gets K-1, next K-2, …, last 0
+    points <- colSums(K - pos_matrix)
+    
+    tibble(candidate = candidateData()$id, Points = as.integer(points)) |>
+      arrange(desc(Points))
+  })
+  
+  
   rcv_out <- reactive({
     rm <- rank_matrix()
     rcv_irv(rm)
@@ -439,6 +625,25 @@ server <- function(input, output, session) {
     V <- voterData(); C <- candidateData()
     make_1d_strip(V, C, top_choice_ids = pref1(), active_mask = rep(TRUE, nrow(C)))
   })
+  
+  map_1d_approval <- reactive({
+    V <- voterData()
+    C <- candidateData()
+    thr <- input$approval_thresh
+    
+    # which voters approve at least one candidate (for fading)
+    D <- abs(outer(V$x, C$x, `-`))          # 1-D distance
+    inside_any <- apply(D <= thr, 1, any)
+    
+    make_1d_strip_approval(
+      V = V,
+      C = C,
+      thr = thr,
+      top_choice_ids = pref1(),
+      inside_any = inside_any
+    )
+  })
+  
   
   map_1d_rcv <- reactive({
     out  <- rcv_out()
@@ -538,9 +743,8 @@ server <- function(input, output, session) {
             plot.margin = margin(t = 5, r = 10, b = 28, l = 32)) +
       labs(title = "Voter & Candidate Positions",
            x="Economic Scale", y="Social Scale")
-    
-    # Put the pole labels *inside* the panel since we're clipping now
-    p <- add_pole_labels(p, off_bottom = -8, off_left = -15)
+
+    p <- add_pole_labels_outside(p) 
     p
   })
   
@@ -601,14 +805,25 @@ server <- function(input, output, session) {
     df <- approval_summary()
     df$fill <- df$candidate
     pal_full <- c(pal, "Didn't vote" = "#777777")
+    
     x_levels <- c(candidate_ids(), "Didn't vote")
     df$candidate <- factor(df$candidate, levels = x_levels)
+    
     x_labels <- setNames(x_levels, x_levels)
     if (input$candidate_count > 10) x_labels["Didn't vote"] <- "Didn't\nvote"
+    
+    # winners (ignore "Didn't vote")
     cand_df <- df |> filter(as.character(candidate) != "Didn't vote")
     maxv <- max(cand_df$value)
     winners <- if (sum(cand_df$value == maxv) > 1) cand_df$candidate[cand_df$value == maxv]
     else cand_df$candidate[which.max(cand_df$value)]
+    
+    # --- turnout denominator for the 50% guide ---
+    didnt   <- df |> filter(as.character(candidate) == "Didn't vote") |> pull(value)
+    didnt   <- if (length(didnt)) didnt else 0L
+    turnout <- max(0L, input$total_voters - didnt)
+    y50     <- turnout / 2
+    
     p <- ggplot(df, aes(x = candidate, y = value, fill = fill)) +
       geom_col() +
       scale_fill_manual(values = pal_full, guide = "none") +
@@ -622,10 +837,34 @@ server <- function(input, output, session) {
             axis.text.x = element_text(hjust = 0.5)) +
       labs(title = sprintf("Approval Results (threshold = %s)", input$approval_thresh),
            x = "Candidate", y = "Approvals")
+    
     p <- add_bar_value_labels(p, df, "candidate", "value", input$total_voters, 0)
     p <- add_winner_text_center(p, winners, candidate_ids(), input$total_voters)
-    add_half_line_discrete(p, input$total_voters/2, x_levels)
+    add_half_line_discrete(p, y50, x_levels)
   })
+  
+  bars_borda <- reactive({
+    pal <- setNames(candidate_palette[seq_len(input$candidate_count)], candidate_ids())
+    df  <- borda_summary() |> rename(points = Points)
+    
+    max_points <- (input$candidate_count - 1L) * input$total_voters
+    winners <- df$candidate[df$points == max(df$points)]
+    
+    p <- ggplot(df, aes(x = candidate, y = points, fill = candidate)) +
+      geom_col() +
+      scale_fill_manual(values = pal, guide = "none") +
+      scale_y_continuous(limits = c(0, max_points), breaks = integer_breaks()) +
+      theme_bw() +
+      theme(panel.grid.major = element_blank(),
+            panel.grid.minor = element_blank(),
+            aspect.ratio = 1) +
+      labs(title = "Borda Results", x = "Candidate", y = "Points")
+    
+    p <- add_bar_value_labels(p, df, "candidate", "points", max_points, 0)
+    add_winner_text_center(p, winners, candidate_ids(), max_points)
+  })
+  
+  
   
   # ---------- RCV bars ----------
   bars_rcv_round <- reactive({
@@ -728,42 +967,73 @@ server <- function(input, output, session) {
   # ---------- Compose (top aligned) ----------
   output$plotgraph <- renderPlot({
     if (identical(input$example_type, "1-dimension")) {
-      left_plot <- if (identical(input$voting_system, "ranked_choice")) map_1d_rcv() else map_1d()
+      left_plot <- switch(
+        input$voting_system,
+        "plurality"     = map_1d(),
+        "ranked_choice" = map_1d_rcv(),
+        "approval"      = map_1d_approval(),
+        "score"         = map_1d(),
+        "borda"         = map_1d()
+      )
     } else {
       left_plot <- switch(
         input$voting_system,
         "plurality"     = map_default(),
         "ranked_choice" = map_rcv(),
         "approval"      = map_approval(),
-        "score"         = map_default()
+        "score"         = map_default(),
+        "borda"         = map_default()
       )
     }
+    
     right_plot <- switch(
       input$voting_system,
       "plurality"     = bars_plurality(),
       "ranked_choice" = bars_rcv_round(),
       "approval"      = bars_approval(),
-      "score"         = bars_score()
+      "score"         = bars_score(),
+      "borda"         = bars_borda()
     )
     cowplot::plot_grid(left_plot, right_plot, ncol = 2, align = "h")
   })
   
   # ---------- Voter data table ----------
   voter_table <- reactive({
-    V <- voterData()
-    C <- candidateData()
-    D <- dist_matrix()   # N x K
-    rm <- rank_matrix()  # N x K (indices)
-    N <- nrow(D); K <- ncol(D)
-    dist_df <- as_tibble(D); names(dist_df) <- paste0(C$id, "_Distance")
+    V  <- voterData()
+    C  <- candidateData()
+    D  <- dist_matrix()          # N x K distances
+    rm <- rank_matrix()          # N x K candidate indices, nearest -> farthest
+    N  <- nrow(D); K <- ncol(D)
+    thr <- input$approval_thresh
+    
+    # Distances as columns A_Distance, B_Distance, ...
+    dist_df <- as_tibble(D)
+    names(dist_df) <- paste0(C$id, "_Distance")
+    
+    # Preferences as letters in distance order
     pref_letters <- matrix(C$id[rm], nrow = N, ncol = K)
-    pref_df <- as_tibble(pref_letters); names(pref_df) <- paste0("Preference_", seq_len(K))
-    tibble(Voter = seq_len(N),
-           x = round(V$x, 1),
-           y = round(V$y, 1)) |>
-      bind_cols(dist_df |> mutate(across(everything(), ~round(., 1)))) |>
-      bind_cols(pref_df)
+    pref_df <- as_tibble(pref_letters)
+    names(pref_df) <- paste0("Preference_", seq_len(K))
+    
+    # New "Approves" (comma-separated IDs, by proximity; blank if none)
+    approves_vec <- vapply(seq_len(N), function(i) {
+      ord  <- rm[i, ]                 # voter i candidate order (nearest -> farthest)
+      keep <- D[i, ord] <= thr        # which are within threshold
+      ids  <- C$id[ord[keep]]
+      if (length(ids) == 0) "" else paste(ids, collapse = ", ")
+    }, character(1))
+    
+    tibble(
+      Voter = seq_len(N),
+      x     = round(V$x, 1),
+      y     = round(V$y, 1)
+    ) |>
+      bind_cols(dist_df |> mutate(across(everything(), ~ round(., 1)))) |>
+      bind_cols(pref_df) |>
+      bind_cols(tibble(Approves = approves_vec))   # <-- appended at the end
   })
+  
+  
   output$voter_table <- renderDT({
     df <- voter_table()
     pref_cols <- grep("^Preference_", names(df), value = TRUE)
@@ -776,64 +1046,104 @@ server <- function(input, output, session) {
   
   # ---------- Results summary table ----------
   results_table <- reactive({
-    C <- candidateData(); ids <- C$id
-    plur <- tibble(candidate = ids) |>
+    C   <- candidateData()
+    ids <- C$id
+    N   <- nrow(voterData())
+    
+    # Plurality (existing)
+    plur_counts <- tibble(candidate = ids) |>
       left_join(plurality_summary(), by = "candidate") |>
-      mutate(Votes = replace_na(Votes, 0L)) |>
-      transmute(candidate, Plurality = Votes)
-    out <- rcv_out()
-    last <- out$rounds[[length(out$rounds)]]
-    rc_counts <- last$counts; rc_active <- last$active
-    rc_col <- ifelse(rc_active, as.character(rc_counts), "X")
-    rcv_df <- tibble(candidate = ids, `Ranked-Choice` = rc_col)
-    appr <- approval_summary() |>
-      filter(candidate %in% ids) |>
-      select(candidate, value) |>
+      mutate(Votes = replace_na(Votes, 0L),
+             Plurality = sprintf("%d (%d%%)", Votes, round(100 * Votes / N))) |>
+      select(candidate, Plurality)
+    
+    # Ranked-Choice (existing)
+    out       <- rcv_out()
+    last_snap <- out$rounds[[length(out$rounds)]]
+    rc_counts <- last_snap$counts
+    rc_active <- last_snap$active
+    rc_text   <- ifelse(rc_active,
+                        sprintf("%d (%d%%)", rc_counts, round(100 * rc_counts / N)),
+                        "X")
+    rcv_df <- tibble(candidate = ids, `Ranked-Choice` = rc_text)
+    
+    # Borda (NEW) — raw point totals
+    borda_df <- borda_summary() |>
       right_join(tibble(candidate = ids), by = "candidate") |>
-      mutate(value = replace_na(value, 0L)) |>
-      transmute(candidate, Approval = value)
+      transmute(candidate, Borda = Points)
+    
+    # Approval (existing)
+    appr_raw <- approval_summary() |> filter(candidate %in% ids)
+    appr_counts <- tibble(candidate = ids) |>
+      left_join(appr_raw, by = "candidate") |>
+      mutate(value = replace_na(value, 0L),
+             pct   = if (N > 0) round(100 * value / N) else 0,
+             Approval = sprintf("%d (%d%%)", value, pct)) |>
+      select(candidate, Approval)
+    
+    # Cardinal (existing)
     score <- score_table() |>
       right_join(tibble(candidate = ids), by = "candidate") |>
       transmute(candidate, `Cardinal (Score)` = round(mean_distance, 1))
-    plur |>
-      left_join(rcv_df, by = "candidate") |>
-      left_join(appr,   by = "candidate") |>
-      left_join(score,  by = "candidate") |>
+    
+    plur_counts |>
+      left_join(rcv_df,   by = "candidate") |>
+      left_join(appr_counts, by = "candidate") |>
+      left_join(score,    by = "candidate") |>
+      left_join(borda_df, by = "candidate") |>
       rename(Candidate = candidate)
   })
+  
   output$results_dt <- renderDT({
-    df <- results_table()
-    plur_winners  <- df$Candidate[df$Plurality == max(df$Plurality, na.rm = TRUE)]
-    rc_nums       <- suppressWarnings(as.numeric(df$`Ranked-Choice`))
-    rc_max        <- max(rc_nums, na.rm = TRUE)
-    rcv_winners   <- df$Candidate[!is.na(rc_nums) & rc_nums == rc_max]
-    appr_winners  <- df$Candidate[df$Approval == max(df$Approval, na.rm = TRUE)]
-    score_min     <- min(df$`Cardinal (Score)`, na.rm = TRUE)
-    score_winners <- df$Candidate[df$`Cardinal (Score)` == score_min]
+    df  <- results_table()
+    ids <- candidateData()$id
+    
+    # winners (existing)
+    plur_s <- plurality_summary()
+    plur_winners <- plur_s$candidate[plur_s$Votes == max(plur_s$Votes, na.rm = TRUE)]
+    
+    appr_s <- approval_summary() |> filter(candidate %in% ids)
+    appr_winners <- appr_s$candidate[appr_s$value == max(appr_s$value, na.rm = TRUE)]
+    
+    score_s <- score_table()
+    score_winners <- score_s$candidate[score_s$mean_distance == min(score_s$mean_distance, na.rm = TRUE)]
+    
+    out <- rcv_out()
+    rcv_winners <- if (is.na(out$winner_index)) candidateData()$id[out$tie_indices]
+    else candidateData()$id[out$winner_index]
+    
+    # NEW: Borda winners
+    borda_s <- borda_summary()
+    borda_winners <- borda_s$candidate[borda_s$Points == max(borda_s$Points, na.rm = TRUE)]
+    
     datatable(
       df,
       class   = "display nowrap compact",
       options = list(
-        pageLength = 10, scrollX = TRUE, autoWidth  = TRUE,
+        pageLength = 10, scrollX = TRUE, autoWidth = TRUE,
         columnDefs = list(
-          list(width = "90px",  targets = 0),
-          list(width = "90px",  className = "dt-center", targets = 1),
-          list(width = "130px", className = "dt-center", targets = 2),
-          list(width = "90px",  className = "dt-center", targets = 3),
-          list(width = "150px", className = "dt-center", targets = 4)
+          list(width = "90px",  targets = 0),   # Candidate
+          list(width = "110px", className = "dt-center", targets = 1), # Plurality
+          list(width = "130px", className = "dt-center", targets = 2), # Ranked-Choice
+          list(width = "90px",  className = "dt-center", targets = 3), # Borda (NEW)
+          list(width = "110px", className = "dt-center", targets = 4), # Approval
+          list(width = "150px", className = "dt-center", targets = 5)  # Cardinal (Score)
         )
       ),
       rownames = FALSE
     ) %>%
-      formatStyle("Plurality",      valueColumns = "Candidate",
-                  fontWeight = styleEqual(plur_winners, rep("bold", length(plur_winners)))) %>%
-      formatStyle("Ranked-Choice",  valueColumns = "Candidate",
-                  fontWeight = styleEqual(rcv_winners, rep("bold", length(rcv_winners)))) %>%
-      formatStyle("Approval",       valueColumns = "Candidate",
-                  fontWeight = styleEqual(appr_winners, rep("bold", length(appr_winners)))) %>%
+      formatStyle("Plurality",        valueColumns = "Candidate",
+                  fontWeight = styleEqual(plur_winners,  rep("bold", length(plur_winners)))) %>%
+      formatStyle("Ranked-Choice",    valueColumns = "Candidate",
+                  fontWeight = styleEqual(rcv_winners,   rep("bold", length(rcv_winners)))) %>%
+      formatStyle("Borda",            valueColumns = "Candidate",     # NEW
+                  fontWeight = styleEqual(borda_winners, rep("bold", length(borda_winners)))) %>%
+      formatStyle("Approval",         valueColumns = "Candidate",
+                  fontWeight = styleEqual(appr_winners,  rep("bold", length(appr_winners)))) %>%
       formatStyle("Cardinal (Score)", valueColumns = "Candidate",
                   fontWeight = styleEqual(score_winners, rep("bold", length(score_winners))))
   }, server = TRUE)
+  
 }
 
 shinyApp(ui, server)
