@@ -431,9 +431,9 @@ server <- function(input, output, session) {
       annotate("segment", x = x_left + -35, xend = -110, y = 0, yend = 0, colour = "#BEBEBE", linewidth = 2) +
       
       # --- main axis ------------------------------------------------------------
-    annotate("segment", x = -100, xend = 100, y = 0, yend = 0, colour = "#BEBEBE", linewidth = 2) +
-      annotate("segment", x = -100, xend = -100, y = -.9, yend = .9, colour = "#BEBEBE", linewidth = 2) +
-      annotate("segment", x =  100, xend =  100, y = -.9, yend = .9, colour = "#BEBEBE", linewidth = 2) +
+    annotate("segment", x = -101, xend = 101, y = 0, yend = 0, colour = "#BEBEBE", linewidth = 2) + # x-axis
+      annotate("segment", x = -101, xend = -101, y = -.9, yend = .9, colour = "#BEBEBE", linewidth = 2) + # x-axis left bracket
+      annotate("segment", x =  101, xend =  101, y = -.9, yend = .9, colour = "#BEBEBE", linewidth = 2) + # x-axis right bracket
       
       # voters (ticks below the axis), coloured by nearest candidate
       geom_segment(
