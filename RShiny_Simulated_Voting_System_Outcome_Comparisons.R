@@ -452,13 +452,13 @@ ui <- fluidPage(
                     "Ranked-Choice"="ranked_choice",
                     "Approval"="approval",
                     "Cardinal (Score)"="score",
-                    "Borda"="borda")),
+                    "Borda Count"="borda")),
       conditionalPanel("input.voting_system == 'approval'",
                        sliderInput("approval_thresh","Approval distance threshold",
                                    min=5,max=150,value=50,step=5)
       ),
       actionButton("randomize", "Randomize Data"),
-      checkboxInput("show_voter_data", "Show Voter Data", value = FALSE),
+      checkboxInput("show_voter_data", "Show voter data", value = FALSE),
       checkboxInput("show_results_table", "Show results table", value = FALSE),
       conditionalPanel("input.voting_system == 'ranked_choice'",
                        hr(),
@@ -858,7 +858,7 @@ server <- function(input, output, session) {
       theme(panel.grid.major = element_blank(),
             panel.grid.minor = element_blank(),
             aspect.ratio = 1) +
-      labs(title = "Borda Results", x = "Candidate", y = "Points")
+      labs(title = "Borda Count Results", x = "Candidate", y = "Points")
     
     p <- add_bar_value_labels(p, df, "candidate", "points", max_points, 0)
     add_winner_text_center(p, winners, candidate_ids(), max_points)
@@ -1070,7 +1070,7 @@ server <- function(input, output, session) {
     # Borda (NEW) — raw point totals
     borda_df <- borda_summary() |>
       right_join(tibble(candidate = ids), by = "candidate") |>
-      transmute(candidate, Borda = Points)
+      transmute(candidate, `Borda Count` = Points)
     
     # Approval (existing)
     appr_raw <- approval_summary() |> filter(candidate %in% ids)
@@ -1125,9 +1125,9 @@ server <- function(input, output, session) {
           list(width = "90px",  targets = 0),   # Candidate
           list(width = "110px", className = "dt-center", targets = 1), # Plurality
           list(width = "130px", className = "dt-center", targets = 2), # Ranked-Choice
-          list(width = "90px",  className = "dt-center", targets = 3), # Borda (NEW)
           list(width = "110px", className = "dt-center", targets = 4), # Approval
-          list(width = "150px", className = "dt-center", targets = 5)  # Cardinal (Score)
+          list(width = "150px", className = "dt-center", targets = 5),  # Cardinal (Score)
+          list(width = "90px",  className = "dt-center", targets = 3) # Borda 
         )
       ),
       rownames = FALSE
@@ -1136,7 +1136,7 @@ server <- function(input, output, session) {
                   fontWeight = styleEqual(plur_winners,  rep("bold", length(plur_winners)))) %>%
       formatStyle("Ranked-Choice",    valueColumns = "Candidate",
                   fontWeight = styleEqual(rcv_winners,   rep("bold", length(rcv_winners)))) %>%
-      formatStyle("Borda",            valueColumns = "Candidate",     # NEW
+      formatStyle("Borda Count",            valueColumns = "Candidate",
                   fontWeight = styleEqual(borda_winners, rep("bold", length(borda_winners)))) %>%
       formatStyle("Approval",         valueColumns = "Candidate",
                   fontWeight = styleEqual(appr_winners,  rep("bold", length(appr_winners)))) %>%
