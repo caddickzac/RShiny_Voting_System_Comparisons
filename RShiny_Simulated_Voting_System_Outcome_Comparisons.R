@@ -452,11 +452,12 @@ ui <- fluidPage(
       numericInput("candidate_count", "Number of candidates: (max=8)",
                    value = 3, min = 2, max = 8),
       selectInput("voting_system", "See full results:",
-                  c("Plurality"="plurality",
-                    "Ranked-Choice"="ranked_choice",
-                    "Approval"="approval",
+                  c("Approval"="approval",
+                    "Borda Count"="borda",
                     "Cardinal (Score)"="score",
-                    "Borda Count"="borda")),
+                    "Plurality"="plurality",
+                    "Ranked-Choice"="ranked_choice"),
+                  selected="plurality"),
       conditionalPanel("input.voting_system == 'approval'",
                        sliderInput("approval_thresh","Approval distance threshold",
                                    min=5,max=150,value=50,step=5)
@@ -664,28 +665,35 @@ server <- function(input, output, session) {
         )
       } else {
         sprintf(
-          "<p><b>Approval:</b> <b>%s</b> leads with <b>%d</b> approvals out of <b>%d</b> voters who cast at least one approval (%s). Margin <b>%d</b>.</p>",
-          o$winner, o$top, o$turnout, fmt_pct(o$top, o$turnout), o$margin
+          "<p><b>Approval:</b> <b>%s</b> leads with <b>%d</b> approvals out of <b>%d</b> voters who cast at least one approval (%s).<br><br>
+          
+          <b>Approval Voting Rules</b>:
+          <br><br></p>",
+          o$winner, o$top, o$turnout, fmt_pct(o$top, o$turnout)
         )
       }
       
-    } else if (vs == "score") {
+    } else if (vs == "score") { # zc
       o <- score_outcome(); if (is.null(o)) return("")
       if (o$tie) {
         sprintf(
-          "<p><b>Cardinal (Score):</b> Tie on minimum mean distance between <b>%s</b> at <b>%.1f</b>.</p>",
+          "<p><b>Who wins according to Cardinal (Score)?</b><br>
+      <b>%s tie according to Cardinal (Score) voting, because these candidates are both equally close to the 
+      voters with an average distance %.1f.<br><br>
+      <b>Cardinal (Score) Voting Rules:</b><br>
+      In Cardinal (Score) voting the candidate that is closest on average to the voters wins.<br><br></p>",
           paste(o$ties, collapse = " and "), o$best
         )
       } else {
-        if (is.na(o$gap)) {
-          sprintf("<p><b>Cardinal (Score):</b> <b>%s</b> has the lowest mean distance <b>%.1f</b>.</p>",
-                  o$winner, o$best)
-        } else {
-          sprintf("<p><b>Cardinal (Score):</b> <b>%s</b> has the lowest mean distance <b>%.1f</b> (next best %.1f; gap %.1f).</p>",
-                  o$winner, o$best, o$next_best, o$gap)
-        }
+        sprintf(
+          "<p><b>Who wins according to Cardinal (Score)?</b><br>
+      <b>%s wins according to Cardinal (Score) voting</b>, because this candidate is closest to the voters 
+      with an average distance of %.1f.<br><br>
+      <b>Cardinal (Score) Voting Rules:</b><br>
+      In Cardinal (Score) voting the candidate that is closest on average to the voters wins.<br><br></p>",
+          o$winner, o$best
+        )
       }
-      
     } else if (vs == "borda") {
       o <- borda_outcome(); if (is.null(o)) return("")
       if (o$tie) {
