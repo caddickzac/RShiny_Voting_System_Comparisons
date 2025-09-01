@@ -91,7 +91,7 @@ make_1d_strip <- function(V, C, top_choice_ids, active_mask = rep(TRUE, nrow(C))
       panel.grid = element_blank(),
       plot.margin = margin(t = 5, r = 15, b = 28, l = 5)
     ) +
-    labs(title = "Political Leaning (1-D)")
+    labs(title = "Voter & Candidate Positions")
   
   # red X overlay for eliminated candidates (cover the letter only)
   elim_df <- df_c %>% filter(alpha < 1)
@@ -223,9 +223,13 @@ make_1d_strip_approval <- function(V, C, thr, top_choice_ids, inside_any,
     labs(title = "Political Leaning (1-D)")
 }
 
-
-
-
+and_join <- function(x) {
+  x <- as.character(x); n <- length(x)
+  if (n == 0) return("")
+  if (n == 1) return(x)
+  if (n == 2) return(paste(x, collapse = " and "))
+  paste(paste(x[1:(n-1)], collapse = ", "), x[n], sep = ", and ")
+}
 
 # sample integer positions with a minimum gap in "notches"
 # ensures |xi - xj| >= min_gap for all selected points
@@ -458,6 +462,7 @@ ui <- fluidPage(
                                    min=5,max=150,value=50,step=5)
       ),
       actionButton("randomize", "Randomize Data"),
+      checkboxInput("show_explanation", "Show results explanation", value = FALSE),
       checkboxInput("show_voter_data", "Show voter data", value = FALSE),
       checkboxInput("show_results_table", "Show results table", value = FALSE),
       conditionalPanel("input.voting_system == 'ranked_choice'",
@@ -472,6 +477,10 @@ ui <- fluidPage(
     ),
     mainPanel(class = "main-panel", style = "padding-top:0;margin-top:0;",
               plotOutput("plotgraph", width="100%", height="560px"),
+              
+              conditionalPanel("input.show_explanation",
+                               tags$hr(), h4("Explanation of Voting Results"), uiOutput("explanation")
+              ),
               conditionalPanel("input.show_voter_data",
                                tags$hr(), h4("Voter Data"), DTOutput("voter_table")
               ),
@@ -487,6 +496,9 @@ server <- function(input, output, session) {
   # caps that depend on Example Type
   voters_max     <- reactive(if (identical(input$example_type, "1-dimension")) 50 else 500)
   candidates_max <- reactive(if (identical(input$example_type, "1-dimension")) 8  else 20)
+  
+  s <- function(n) ifelse(n == 1, "", "s") # text explanation pluralization variable
+  
   
   # update maxes + labels when Example Type changes (no feedback loop)
   observeEvent(input$example_type, {
@@ -510,6 +522,94 @@ server <- function(input, output, session) {
     rcv_round(1)
   }, ignoreInit = TRUE)
   
+  # for results explanation
+  fmt_pct <- function(n, d) if (d > 0) sprintf("%d%%", round(100 * n / d)) else "—"
+  safe_get <- function(x, i, default = 0L) if (length(x) >= i) x[i] else default
+  
+  plurality_outcome <- reactive({
+    df <- plurality_summary()
+    df <- arrange(df, desc(Votes))
+    if (!nrow(df)) return(NULL)
+    top_votes <- safe_get(df$Votes, 1)
+    runner    <- safe_get(df$Votes, 2)
+    list(
+      winner   = df$candidate[1],
+      top      = top_votes,
+      runner   = runner,
+      margin   = top_votes - runner,
+      total    = input$total_voters,
+      tie      = sum(df$Votes == top_votes) > 1,
+      ties     = df$candidate[df$Votes == top_votes]
+    )
+  })
+  
+  approval_outcome <- reactive({
+    df <- approval_summary()
+    # turnout excludes "Didn't vote"
+    didnt   <- df$value[df$candidate == "Didn't vote"]; if (!length(didnt)) didnt <- 0L
+    turnout <- max(0L, input$total_voters - didnt)
+    cand    <- df |> filter(candidate != "Didn't vote") |> arrange(desc(value))
+    if (!nrow(cand)) return(NULL)
+    top <- safe_get(cand$value, 1); runner <- safe_get(cand$value, 2)
+    list(
+      winner = cand$candidate[1],
+      top    = top,
+      runner = runner,
+      margin = top - runner,
+      turnout = turnout,
+      tie    = sum(cand$value == top) > 1,
+      ties   = cand$candidate[cand$value == top]
+    )
+  })
+  
+  score_outcome <- reactive({
+    df <- score_table() |> arrange(mean_distance)
+    if (!nrow(df)) return(NULL)
+    best  <- safe_get(df$mean_distance, 1)
+    nextb <- safe_get(df$mean_distance, 2, default = NA_real_)
+    list(
+      winner    = df$candidate[1],
+      best      = best,
+      next_best = nextb,
+      gap       = if (is.na(nextb)) NA_real_ else (nextb - best),
+      tie       = sum(abs(df$mean_distance - best) < 1e-9) > 1,
+      ties      = df$candidate[abs(df$mean_distance - best) < 1e-9]
+    )
+    
+  })
+  
+  borda_outcome <- reactive({
+    df <- borda_summary() |> arrange(desc(Points))
+    if (!nrow(df)) return(NULL)
+    top <- safe_get(df$Points, 1); runner <- safe_get(df$Points, 2)
+    list(
+      winner = df$candidate[1],
+      top    = top,
+      runner = runner,
+      margin = top - runner,
+      tie    = sum(df$Points == top) > 1,
+      ties   = df$candidate[df$Points == top]
+    )
+  })
+  
+  rcv_outcome <- reactive({
+    out <- rcv_out()
+    rounds <- out$rounds
+    if (!length(rounds)) return(NULL)
+    last   <- rounds[[length(rounds)]]
+    counts <- last$counts
+    active <- last$active
+    finalists <- which(active)
+    winner_id <- if (is.na(out$winner_index)) NA_integer_ else out$winner_index
+    list(
+      rounds      = length(rounds),
+      finalists   = finalists,
+      final_counts= counts[finalists],
+      winner_idx  = winner_id,
+      tie         = is.na(out$winner_index),
+      tie_ids     = if (is.na(out$winner_index)) out$tie_indices else integer(0)
+    )
+  })
   
   # clamp inputs (manual edits)
   observeEvent(input$total_voters, {
@@ -525,6 +625,131 @@ server <- function(input, output, session) {
   }, ignoreInit = TRUE)
   
   # ---- downstream reactives ----
+  explanation_html <- reactive({
+    vs <- input$voting_system
+    C  <- candidateData()
+    
+    if (vs == "plurality") {
+      o <- plurality_outcome(); if (is.null(o)) return("")
+      if (o$tie) {
+        sprintf(
+          "<p><b>Who wins according to plurality?:</b><br>
+       <b>%s tie according to plurality</b>, because while these candidates had the
+       largest number of votes, they also had an equal number of votes (%d/%d voters or %s).<br><br>
+       <b>Plurality Voting Rules</b>:<br>
+       Plurality voting prioritizes selecting a winner who has the single most support. A winning candidate
+       in a plurality system needs to have more votes than any other candidate but does not necessarily 
+       need to have over 50%% of the votes to win.<br><br></p>",
+          and_join(o$ties), o$top, o$total, fmt_pct(o$top, o$total)
+        )
+      } else {
+        sprintf(
+          "<p><b>Who wins according to plurality?:</b><br>
+       <b>%s wins according to plurality</b>, because the largest number of voters chose this candidate
+       (%d/%d voters or %s).<br><br>
+       <b>Plurality Voting Rules</b>:<br>
+       Plurality voting prioritizes selecting a winner who has the single most support. A winning candidate
+       in a plurality system needs to have more votes than any other candidate but does not necessarily 
+       need to have over 50%% of the votes to win.<br><br></p>",
+          o$winner, o$top, o$total, fmt_pct(o$top, o$total)
+        )
+      }
+      
+    } else if (vs == "approval") {
+      o <- approval_outcome(); if (is.null(o)) return("")
+      if (o$tie) {
+        sprintf(
+          "<p><b>Approval:</b> Tie between <b>%s</b> at <b>%d</b> approvals.</p>",
+          paste(o$ties, collapse = " and "), o$top
+        )
+      } else {
+        sprintf(
+          "<p><b>Approval:</b> <b>%s</b> leads with <b>%d</b> approvals out of <b>%d</b> voters who cast at least one approval (%s). Margin <b>%d</b>.</p>",
+          o$winner, o$top, o$turnout, fmt_pct(o$top, o$turnout), o$margin
+        )
+      }
+      
+    } else if (vs == "score") {
+      o <- score_outcome(); if (is.null(o)) return("")
+      if (o$tie) {
+        sprintf(
+          "<p><b>Cardinal (Score):</b> Tie on minimum mean distance between <b>%s</b> at <b>%.1f</b>.</p>",
+          paste(o$ties, collapse = " and "), o$best
+        )
+      } else {
+        if (is.na(o$gap)) {
+          sprintf("<p><b>Cardinal (Score):</b> <b>%s</b> has the lowest mean distance <b>%.1f</b>.</p>",
+                  o$winner, o$best)
+        } else {
+          sprintf("<p><b>Cardinal (Score):</b> <b>%s</b> has the lowest mean distance <b>%.1f</b> (next best %.1f; gap %.1f).</p>",
+                  o$winner, o$best, o$next_best, o$gap)
+        }
+      }
+      
+    } else if (vs == "borda") {
+      o <- borda_outcome(); if (is.null(o)) return("")
+      if (o$tie) {
+        sprintf("<p><b>Borda Count:</b> Tie between <b>%s</b> at <b>%d</b> points.</p>",
+                paste(o$ties, collapse = " and "), o$top)
+      } else {
+        sprintf("<p><b>Borda Count:</b> <b>%s</b> leads with <b>%d</b> points (runner-up %d; margin %d).</p>",
+                o$winner, o$top, o$runner, o$margin)
+      }
+    } else if (vs == "ranked_choice") { # zc
+      o <- rcv_outcome(); if (is.null(o)) return("")
+      if (o$tie) {
+        ids <- C$id[o$tie_ids]
+        # tied candidates' final-round tallies (equal in a final-round tie)
+        final_ids <- C$id[o$finalists]
+        tie_votes <- o$final_counts[match(ids[1], final_ids)]
+        if (is.na(tie_votes)) tie_votes <- o$final_counts[1L]  # safety
+        
+        sprintf("<p><b>Who wins according to ranked-choice voting?</b><br>
+            <b>%s tie according to ranked-choice voting</b>, 
+            after %d round%s with %d/%d voters or %s each.<br><br>
+            <b>Ranked-Choice Voting Rules</b>:<br>
+            Ranked-Choice voting prioritizes majority approval and a winning candidate must have 
+            over 50%% of the total votes. This works by first counting all voters' first preference 
+            and seeing if any candidate has over 50%% support. If so, this candidate wins. If not, 
+            then the candidate with the least amount of support is “eliminated” and their votes are 
+            re-assigned to their next favorite candidate. The votes are then counted again to see if 
+            a candidate has over 50%% support. If so, this candidate wins. If not, the process is repeated.<br><br>
+            If, during an elimination round, there are two candidates who equally have the least amount of support (measured by vote counts), 
+            the candidate with the lowest Borda count points is eliminated (reflecting the candidate that is ranked lowest by the voters).
+            <br><br></p>",
+                paste(ids, collapse = " and "), o$rounds, s(o$rounds), tie_votes, input$total_voters, fmt_pct(tie_votes, input$total_voters))
+      }else {
+        winner <- C$id[o$winner_idx]
+        # winner's final-round tally
+        final_ids <- C$id[o$finalists]
+        w_final   <- o$final_counts[match(winner, final_ids)]
+        
+        sprintf("<p><b>Who wins according to ranked-choice voting?</b><br>
+            <b>%s wins according to ranked-choice voting</b>, 
+            after %d round%s with %d/%d voters or %s.<br><br>
+            <b>Ranked-Choice Voting Rules</b>:<br>
+            Ranked-Choice voting prioritizes majority approval and a winning candidate must have 
+            over 50%% of the total votes. This works by first counting all voters' first preference 
+            and seeing if any candidate has over 50%% support. If so, this candidate wins. If not, 
+            then the candidate with the least amount of support is “eliminated” and their votes are 
+            re-assigned to their next favorite candidate. The votes are then counted again to see if 
+            a candidate has over 50%% support. If so, this candidate wins. If not, the process is repeated.<br><br>
+            If, during an elimination round, there are two candidates who equally have the least amount of support (measured by vote counts), 
+            the candidate with the lowest Borda count points is eliminated (reflecting the candidate that is ranked lowest by the voters).
+            <br><br></p>",
+                winner, o$rounds, s(o$rounds), w_final, input$total_voters, fmt_pct(w_final, input$total_voters))
+      }
+    }
+    else {
+      ""
+    }
+  })
+  
+  output$explanation <- renderUI({
+    HTML(explanation_html())
+  })
+  
+  
   voterData <- eventReactive(list(input$randomize, input$total_voters, input$example_type), {
     if (identical(input$example_type, "1-dimension")) {
       tibble(
