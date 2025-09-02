@@ -634,24 +634,25 @@ server <- function(input, output, session) {
       o <- plurality_outcome(); if (is.null(o)) return("")
       if (o$tie) {
         sprintf(
-          "<p><b>Who wins according to plurality?:</b><br>
+          "<p><b>Who wins according to plurality?</b><br>
        <b>%s tie according to plurality</b>, because while these candidates had the
-       largest number of votes, they also had an equal number of votes (%d/%d voters or %s).<br><br>
+       largest number of votes, they also had an equal number of votes (%d/%d votes or %s).<br><br>
        <b>Plurality Voting Rules</b>:<br>
-       Plurality voting prioritizes selecting a winner who has the single most support. A winning candidate
-       in a plurality system needs to have more votes than any other candidate but does not necessarily 
+       Plurality voting prioritizes selecting a winner who has the single most support. A single candidate is chosen by each voter. 
+       A winning candidate in a plurality system needs to have more votes than any other candidate but does not necessarily 
        need to have over 50%% of the votes to win.<br><br></p>",
           and_join(o$ties), o$top, o$total, fmt_pct(o$top, o$total)
         )
       } else {
         sprintf(
-          "<p><b>Who wins according to plurality?:</b><br>
-       <b>%s wins according to plurality</b>, because the largest number of voters chose this candidate
+          "<p><b>Who wins according to plurality?</b><br>
+       <b>%s wins according to plurality</b>, because this candidate had the largest number of votes 
        (%d/%d voters or %s).<br><br>
        <b>Plurality Voting Rules</b>:<br>
-       Plurality voting prioritizes selecting a winner who has the single most support. A winning candidate
-       in a plurality system needs to have more votes than any other candidate but does not necessarily 
-       need to have over 50%% of the votes to win.<br><br></p>",
+       Plurality voting prioritizes selecting a winner who has the single most support. A single candidate is chosen by each voter. 
+       A winning candidate in a plurality system needs to have more votes than any other candidate but does not necessarily 
+       need to have over 50%% of the votes to win.
+          <br><br></p>",
           o$winner, o$top, o$total, fmt_pct(o$top, o$total)
         )
       }
@@ -660,14 +661,28 @@ server <- function(input, output, session) {
       o <- approval_outcome(); if (is.null(o)) return("")
       if (o$tie) {
         sprintf(
-          "<p><b>Approval:</b> Tie between <b>%s</b> at <b>%d</b> approvals.</p>",
-          paste(o$ties, collapse = " and "), o$top
+          "<p><b>Who wins according to approval voting?</b><br>
+          <b>%s</b> tie according to approval voting, because while these candidates had the largest number of votes of approval,
+          they also had an equal number of votes (%d/%d votes or %s).<br><br>
+          <b>Approval Voting Rules</b>:<br>
+          Approval voting prioritizes selecting a candidate based on who voters most approve of. In contrast to plurality voting, 
+          voters can choose many candidates, essentially ratings each candidate with a 1 (approve) or 0 (do not approve). 
+          A winning candidate is the one with the most votes of approval and does not 
+          need to have over 50%% of the votes to win.
+          <br><br></p>",
+          paste(o$ties, collapse = " and "), o$top, o$turnout, fmt_pct(o$top, o$turnout)
         )
       } else {
         sprintf(
-          "<p><b>Approval:</b> <b>%s</b> leads with <b>%d</b> approvals out of <b>%d</b> voters who cast at least one approval (%s).<br><br>
+          "<p><b>Who wins according to approval voting?</b><br>
+          <b>%s wins according to approval voting</b>, because this candidate had the largest number of votes 
+          (%d/%d votes or %s).<br><br>
           
-          <b>Approval Voting Rules</b>:
+          <b>Approval Voting Rules</b>:<br>
+          Approval voting prioritizes selecting a candidate based on who voters most approve of. In contrast to plurality voting, 
+          voters can choose many candidates, essentially ratings each candidate with a 1 (approve) or 0 (do not approve). 
+          A winning candidate is the one with the most votes of approval and does not 
+          need to have over 50%% of the votes to win.
           <br><br></p>",
           o$winner, o$top, o$turnout, fmt_pct(o$top, o$turnout)
         )
@@ -681,7 +696,9 @@ server <- function(input, output, session) {
       <b>%s tie according to Cardinal (Score) voting, because these candidates are both equally close to the 
       voters with an average distance %.1f.<br><br>
       <b>Cardinal (Score) Voting Rules:</b><br>
-      In Cardinal (Score) voting the candidate that is closest on average to the voters wins.<br><br></p>",
+      In Cardinal (Score) voting the candidate that is closest on average to the voters wins. 
+      Each candidate receives a score from every voter, which is averaged into a single score for each candidate. 
+      In this setup, distance is used as the score each candidate receives from every voter. <br><br></p>",
           paste(o$ties, collapse = " and "), o$best
         )
       } else {
@@ -690,18 +707,36 @@ server <- function(input, output, session) {
       <b>%s wins according to Cardinal (Score) voting</b>, because this candidate is closest to the voters 
       with an average distance of %.1f.<br><br>
       <b>Cardinal (Score) Voting Rules:</b><br>
-      In Cardinal (Score) voting the candidate that is closest on average to the voters wins.<br><br></p>",
+      In Cardinal (Score) voting the candidate that is closest on average to the voters wins. 
+      Each candidate receives a score from every voter, which is averaged into a single score for each candidate. 
+      In this setup, distance is used as the score each candidate receives from every voter. <br><br></p>",
           o$winner, o$best
         )
       }
     } else if (vs == "borda") {
       o <- borda_outcome(); if (is.null(o)) return("")
       if (o$tie) {
-        sprintf("<p><b>Borda Count:</b> Tie between <b>%s</b> at <b>%d</b> points.</p>",
+        sprintf("<p><b>Who wins according to Borda Count voting?</b><br>
+                <b>%s</b> tie according to Borda count voting, because while these candidates had the 
+                largest number of points, they also had an equal number of points (<b>%d</b> points).<br><br>
+                <b>Borda Count Voting Rules:</b><br>
+                Borda Count turns each voter’s rankings of candidates into points. The first choice receives the most points, 
+                the second choice one fewer, and so on, down to zero for the last choice. After all ballots are tallied, 
+                the candidate with the highest total points wins. This methods rewards broadly liked candidates, 
+                even if they do not receive the most first-choice votes.    
+                <br><br></p>",
                 paste(o$ties, collapse = " and "), o$top)
       } else {
-        sprintf("<p><b>Borda Count:</b> <b>%s</b> leads with <b>%d</b> points (runner-up %d; margin %d).</p>",
-                o$winner, o$top, o$runner, o$margin)
+        sprintf("<p><b>Who wins according to Borda Count voting?</b><br> 
+                <b>%s</b> wins according to Borda count voting, because this candidate had the largest number of 
+                points (<b>%d</b> points).<br><br>
+                <b>Borda Count Voting Rules:</b><br>
+                Borda Count turns each voter’s rankings of candidates into points. The first choice receives the most points, 
+                the second choice one fewer, and so on, down to zero for the last choice. After all ballots are tallied, 
+                the candidate with the highest total points wins. This methods rewards broadly liked candidates, 
+                even if they do not receive the most first-choice votes. 
+                <br><br></p>",
+                o$winner, o$top)
       }
     } else if (vs == "ranked_choice") { # zc
       o <- rcv_outcome(); if (is.null(o)) return("")
@@ -722,7 +757,7 @@ server <- function(input, output, session) {
             then the candidate with the least amount of support is “eliminated” and their votes are 
             re-assigned to their next favorite candidate. The votes are then counted again to see if 
             a candidate has over 50%% support. If so, this candidate wins. If not, the process is repeated.<br><br>
-            If, during an elimination round, there are two candidates who equally have the least amount of support (measured by vote counts), 
+            Note: If, during an elimination round, there are two candidates who equally have the least amount of support (measured by vote counts), 
             the candidate with the lowest Borda count points is eliminated (reflecting the candidate that is ranked lowest by the voters).
             <br><br></p>",
                 paste(ids, collapse = " and "), o$rounds, s(o$rounds), tie_votes, input$total_voters, fmt_pct(tie_votes, input$total_voters))
@@ -742,7 +777,7 @@ server <- function(input, output, session) {
             then the candidate with the least amount of support is “eliminated” and their votes are 
             re-assigned to their next favorite candidate. The votes are then counted again to see if 
             a candidate has over 50%% support. If so, this candidate wins. If not, the process is repeated.<br><br>
-            If, during an elimination round, there are two candidates who equally have the least amount of support (measured by vote counts), 
+            Note: If, during an elimination round, there are two candidates who equally have the least amount of support (measured by vote counts), 
             the candidate with the lowest Borda count points is eliminated (reflecting the candidate that is ranked lowest by the voters).
             <br><br></p>",
                 winner, o$rounds, s(o$rounds), w_final, input$total_voters, fmt_pct(w_final, input$total_voters))
