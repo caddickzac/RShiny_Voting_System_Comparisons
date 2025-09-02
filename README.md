@@ -1,4 +1,4 @@
-# Voting System Comparison Simulation (Shiny for R)
+# Voting System Comparison Simulation (RShiny)
 
 > **Status:** Under active development.
 
