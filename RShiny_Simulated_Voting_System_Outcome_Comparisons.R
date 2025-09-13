@@ -5,7 +5,7 @@
 
 library(shiny)
 library(tidyverse)
-library(gridExtra)
+library(shinyjs)
 library(ggforce)
 library(cowplot)
 library(DT)
@@ -220,7 +220,7 @@ make_1d_strip_approval <- function(V, C, thr, top_choice_ids, inside_any,
       axis.title = element_blank(), axis.text = element_blank(), axis.ticks = element_blank(),
       panel.grid = element_blank(), plot.margin = margin(t = 5, r = 15, b = 28, l = 5)
     ) +
-    labs(title = "Political Leaning (1-D)")
+    labs(title = "Voter & Candidate Positions")
 }
 
 and_join <- function(x) {
@@ -431,66 +431,105 @@ rcv_irv <- function(rank_mat) {
 
 # ---------------- UI ----------------
 ui <- fluidPage(
-  tags$head(tags$style(HTML("
-  .main-panel { padding-top: 0 !important; }
-  .main-panel .shiny-plot-output { margin-top: -10px; }
-  .main-panel .plot-container { padding-top: 0 !important; }
-  .dataTables_wrapper .dataTables_scrollHead table,
-  .dataTables_wrapper .dataTables_scrollBody table { width: 100% !important; }
-  "))),
+  tags$head(
+    tags$style(HTML("
+      .main-panel { padding-top:0 !important; padding-bottom:40px !important; }
+      .main-panel .shiny-plot-output { margin-top:-10px; }
+      .main-panel .plot-container { padding-top:0 !important; }
+      .dataTables_wrapper .dataTables_scrollHead table,
+      .dataTables_wrapper .dataTables_scrollBody table { width:100% !important; }
+      .container-fluid { padding-bottom:40px; }
+      .dataTables_wrapper { margin-bottom:16px; }
+
+      /* toolbar row */
+      .toolbar-inline{
+        display:flex; gap:.5rem; align-items:flex-start; flex-wrap:wrap;
+      }
+      .toolbar-inline .btn{
+        height:34px; padding:6px 12px; line-height:1.42857143; vertical-align:middle;
+      }
+
+      /* compact fileInput: hide the filename box, keep button */
+      #import_csv.shiny-input-container{ width:auto; margin:0; }
+      #import_csv .input-group{ display:inline-flex; width:auto; align-items:center; }
+      #import_csv .form-control{ display:none !important; }   /* <- hides big filename field */
+      #import_csv .btn{ height:34px; padding:6px 12px; }
+
+      /* progress/status bar: always on its own row under the buttons */
+      #import_csv .shiny-file-input-progress{
+        order:99; flex-basis:100%; width:100%; margin:.35rem 0 0 0;
+      }
+      #import_csv .shiny-file-input-progress .progress{ margin-bottom:0; }
+      #import_csv .shiny-file-input-progress .progress-bar{ text-align:center; }
+    ")),
+    # JS helper to clear filename + hide progress on demand
+    tags$script(HTML("
+      Shiny.addCustomMessageHandler('toolbarReset', function(id){
+        var c = document.getElementById(id);
+        if(!c) return;
+        var fi = c.querySelector('input[type=file]');  // the real file input
+        if(fi) fi.value = '';
+        var txt = c.querySelector('.form-control');    // filename text box (hidden above)
+        if(txt){ txt.value=''; txt.placeholder='Select CSV'; }
+        var prog = c.querySelector('.shiny-file-input-progress');
+        if(prog){ prog.style.display='none'; prog.innerHTML=''; }
+      });
+    "))
+  ),
   
   titlePanel("Simulated Voting System Outcome Comparisons"),
+  
   sidebarLayout(
     sidebarPanel(
-      selectInput(
-        "example_type", "Example Type",
-        choices = c("1-dimension", "2-dimension"),
-        selected = "1-dimension"
-      ),
-      numericInput("total_voters", "Number of voters: (max=50)",
-                   value = 11, min = 1, max = 50),
-      numericInput("candidate_count", "Number of candidates: (max=8)",
-                   value = 3, min = 2, max = 8),
-      selectInput("voting_system", "See full results:",
-                  c("Approval"="approval",
-                    "Borda Count"="borda",
-                    "Cardinal (Score)"="score",
-                    "Plurality"="plurality",
-                    "Ranked-Choice"="ranked_choice"),
+      selectInput("example_type","Example Type",
+                  choices=c("1-dimension","2-dimension"), selected="1-dimension"),
+      numericInput("total_voters","Number of voters: (max=50)", value=11, min=1, max=50),
+      numericInput("candidate_count","Number of candidates: (max=8)", value=3, min=2, max=8),
+      selectInput("voting_system","See full results:",
+                  c("Approval"="approval","Borda Count"="borda","Cardinal (Score)"="score",
+                    "Plurality"="plurality","Ranked-Choice"="ranked_choice"),
                   selected="plurality"),
       conditionalPanel("input.voting_system == 'approval'",
-                       sliderInput("approval_thresh","Approval distance threshold",
-                                   min=5,max=150,value=50,step=5)
+                       sliderInput("approval_thresh","Approval distance threshold", min=5,max=150,value=50,step=5)
       ),
-      actionButton("randomize", "Randomize Data"),
-      checkboxInput("show_explanation", "Show results explanation", value = FALSE),
-      checkboxInput("show_voter_data", "Show voter data", value = FALSE),
-      checkboxInput("show_results_table", "Show results table", value = FALSE),
+      
+      # --- toolbar row
+      tags$div(class="toolbar-inline",
+               actionButton("randomize","Randomize Data"),
+               downloadButton("export_csv", "Export CSV"),
+               uiOutput("import_ui")),   # <- fileInput will be rendered here
+      checkboxInput("show_explanation","Show results explanation", FALSE),
+      checkboxInput("show_voter_data","Show voter data", FALSE),
+      checkboxInput("show_results_table","Show results table", FALSE),
+      checkboxInput("show_criteria","Show voting criterion assessments", FALSE),
+      
       conditionalPanel("input.voting_system == 'ranked_choice'",
                        hr(),
                        tags$div("View RCV rounds", style="font-weight:bold;margin-bottom:.25rem;"),
                        tags$div(style="display:flex;gap:.5rem;align-items:center;",
                                 actionButton("prev_round","◀"),
                                 actionButton("next_round","▶"),
-                                tags$div(textOutput("rcv_round_label"), style="margin-left:.5rem;font-weight:bold;")
-                       )
-      )
+                                tags$div(textOutput("rcv_round_label"),
+                                         style="margin-left:.5rem;font-weight:bold;")
+                       ))
     ),
-    mainPanel(class = "main-panel", style = "padding-top:0;margin-top:0;",
+    
+    mainPanel(class="main-panel", style="padding-top:0;margin-top:0;",
               plotOutput("plotgraph", width="100%", height="560px"),
               
               conditionalPanel("input.show_explanation",
-                               tags$hr(), h4("Explanation of Voting Results"), uiOutput("explanation")
-              ),
+                               tags$hr(), h4("Explanation of Voting Results"), uiOutput("explanation")),
               conditionalPanel("input.show_voter_data",
-                               tags$hr(), h4("Voter Data"), DTOutput("voter_table")
-              ),
+                               tags$hr(), h4("Voter Data"), DTOutput("voter_table")),
               conditionalPanel("input.show_results_table",
-                               tags$hr(), h4("Results by Voting System"), DTOutput("results_dt", width = "100%")
-              )
+                               tags$hr(), h4("Results by Voting System"), DTOutput("results_dt", width="100%")),
+              conditionalPanel("input.show_criteria",
+                               tags$hr(), h4("Voting criteria assessment"), DTOutput("criteria_dt"),
+                               tags$br(), uiOutput("criteria_help"))
     )
   )
 )
+
 
 # ---------------- Server ----------------
 server <- function(input, output, session) {
@@ -498,8 +537,191 @@ server <- function(input, output, session) {
   voters_max     <- reactive(if (identical(input$example_type, "1-dimension")) 50 else 500)
   candidates_max <- reactive(if (identical(input$example_type, "1-dimension")) 8  else 20)
   
-  s <- function(n) ifelse(n == 1, "", "s") # text explanation pluralization variable
+  # ---- import/export plumbing ----
+  V_override <- reactiveVal(NULL)   # when set, voterData() will use this
+  C_override <- reactiveVal(NULL)   # when set, candidateData() will use this
+  import_bump <- reactiveVal(0)     # trigger to recompute eventReactives after import
   
+  output$export_csv <- downloadHandler(
+    filename = function() {
+      sprintf("voting-scenario-%s.csv", Sys.Date())
+    },
+    contentType = "text/csv",
+    content = function(file) {
+      # current data
+      V <- voterData()
+      C <- candidateData()
+      df <- dplyr::bind_rows(
+        dplyr::transmute(V, x = x, y = y, label = "voter"),
+        dplyr::transmute(C, x = x, y = y, label = paste0("candidate_", tolower(id)))
+      )
+      ex_type <- if (identical(input$example_type, "1-dimension")) "1-Dimension" else "2-Dimension"
+      
+      # write a top metadata line, then a blank line, then the table header + rows
+      con <- file(file, open = "wt", encoding = "UTF-8")
+      on.exit(close(con), add = TRUE)
+      writeLines(sprintf("Example Type,%s", ex_type), con)
+      writeLines("", con)
+      utils::write.table(df, con, sep = ",", row.names = FALSE, col.names = TRUE, quote = FALSE)
+    }
+  )
+  
+  # Rebuild handle for the Import CSV control
+  import_reset <- reactiveVal(0)
+  
+  # Render the fileInput (depends on import_reset())
+  output$import_ui <- renderUI({
+    import_reset()  # dependency
+    fileInput("import_csv", label = NULL, accept = ".csv",
+              buttonLabel = "Import CSV", placeholder = "Select CSV",
+              width = "220px")
+  })
+  
+  observeEvent(input$import_csv, {
+    req(input$import_csv$datapath)
+    path <- input$import_csv$datapath
+    
+    # read all lines so we can parse the optional metadata preface
+    lines <- readLines(path, warn = FALSE, encoding = "UTF-8")
+    if (!length(lines)) {
+      showNotification("Import failed: file is empty.", type = "error"); return()
+    }
+    
+    # parse optional "Example Type,..." header
+    ex_type_in_file <- NULL
+    i <- 1L
+    if (grepl("^\\s*Example\\s*Type\\s*,", lines[i], ignore.case = TRUE)) {
+      parts <- strsplit(lines[i], ",", fixed = TRUE)[[1]]
+      ex_type_in_file <- trimws(parts[2])
+      i <- i + 1L
+      # skip one optional blank line
+      if (i <= length(lines) && trimws(lines[i]) == "") i <- i + 1L
+    }
+    
+    # everything from i..end is the CSV with header x,y,label
+    csv_txt <- paste(lines[i:length(lines)], collapse = "\n")
+    df <- tryCatch(
+      read.csv(text = csv_txt, stringsAsFactors = FALSE, check.names = FALSE),
+      error = function(e) NULL
+    )
+    if (is.null(df)) {
+      showNotification("Import failed: could not parse CSV data block.", type = "error"); return()
+    }
+    
+    # normalize column names, validate columns
+    names(df) <- tolower(trimws(names(df)))
+    needed <- c("x","y","label")
+    if (!all(needed %in% names(df))) {
+      showNotification("Import failed: CSV must have columns x, y, label.", type = "error"); return()
+    }
+    
+    # coerce + basic bounds
+    df$x <- suppressWarnings(as.numeric(df$x))
+    df$y <- suppressWarnings(as.numeric(df$y))
+    if (any(!is.finite(df$x)) || any(!is.finite(df$y))) {
+      showNotification("Import failed: x and y must be numeric.", type = "error"); return()
+    }
+    if (any(df$x < -100 | df$x > 100 | df$y < -100 | df$y > 100)) {
+      showNotification("Import failed: all x and y must be between -100 and 100.", type = "error"); return()
+    }
+    
+    # split voters vs candidates
+    df$label <- tolower(trimws(df$label))
+    voters <- dplyr::filter(df, label == "voter")
+    cands  <- dplyr::filter(df, grepl("^candidate_[a-z]$", label))
+    
+    if (!nrow(voters)) { showNotification("Import failed: no voters found.", type="error"); return() }
+    if (!nrow(cands))  { showNotification("Import failed: no candidates found.", type="error"); return() }
+    
+    # extract candidate letters
+    cands$letter <- toupper(sub("^candidate_([a-z])$", "\\1", cands$label))
+    # enforce one row per candidate id
+    dup_ids <- cands$letter[duplicated(cands$letter)]
+    if (length(dup_ids)) {
+      showNotification(sprintf("Import failed: duplicate rows for candidate(s): %s.",
+                               paste(sort(unique(dup_ids)), collapse=", ")),
+                       type="error"); return()
+    }
+    
+    # example type from file -> normalize to app values
+    if (!is.null(ex_type_in_file)) {
+      ex_norm <- tolower(gsub("\\s+", "-", ex_type_in_file))
+      if (ex_norm %in% c("1-dimension","1-d","1d","1dimension")) ex_norm <- "1-dimension"
+      if (ex_norm %in% c("2-dimension","2-d","2d","2dimension","two-dimension")) ex_norm <- "2-dimension"
+      if (!ex_norm %in% c("1-dimension","2-dimension")) {
+        showNotification("Import failed: unknown Example Type in header.", type="error"); return()
+      }
+      updateSelectInput(session, "example_type", selected = ex_norm)
+    }
+    
+    # enforce candidate IDs are contiguous from A..K (so palette & tables stay consistent)
+    K <- nrow(cands)
+    expected_ids <- LETTERS[seq_len(K)]
+    if (!setequal(cands$letter, expected_ids)) {
+      showNotification(
+        sprintf("Import failed: candidate labels must be exactly candidate_%s..candidate_%s with no gaps.",
+                tolower(expected_ids[1]), tolower(expected_ids[K])),
+        type="error"
+      )
+      return()
+    }
+    # order candidates A..K
+    cands <- dplyr::arrange(cands, letter)
+    
+    # per-type geometry/spacings
+    MIN_GAP_1D <- 2
+    
+    if (identical(input$example_type, "1-dimension")) {
+      # 1-D: force y=0 (and validate near-0)
+      if (any(abs(voters$y) > 1e-9) || any(abs(cands$y) > 1e-9)) {
+        showNotification("Import failed: in 1-Dimension, all y must be 0.", type="error"); return()
+      }
+      voters$y <- 0; cands$y <- 0
+      
+      # min spacing along x (voters & candidates)
+      vxs <- sort(voters$x); cxs <- sort(cands$x)
+      if (length(vxs) > 1 && min(diff(vxs)) < MIN_GAP_1D) {
+        showNotification(sprintf("Import failed: in 1-Dimension, voters must be ≥ %d units apart on x.", MIN_GAP_1D),
+                         type="error"); return()
+      }
+      if (length(cxs) > 1 && min(diff(cxs)) < MIN_GAP_1D) {
+        showNotification(sprintf("Import failed: in 1-Dimension, candidates must be ≥ %d units apart on x.", MIN_GAP_1D),
+                         type="error"); return()
+      }
+    } else {
+      # 2-D: voters cannot occupy identical coordinates
+      pair_key <- paste(round(voters$x, 8), round(voters$y, 8))
+      if (any(duplicated(pair_key))) {
+        showNotification("Import failed: voters cannot occupy identical (x,y) points in 2-Dimension.",
+                         type="error"); return()
+      }
+    }
+    
+    # build override tibbles in the app’s expected shape
+    V_new <- tibble::tibble(x = as.numeric(voters$x), y = as.numeric(voters$y))
+    C_new <- tibble::tibble(x = as.numeric(cands$x),  y = as.numeric(cands$y), id = cands$letter)
+    
+    # update numeric inputs (will also keep your side widgets consistent)
+    updateNumericInput(session, "total_voters",   value = nrow(V_new))
+    updateNumericInput(session, "candidate_count", value = nrow(C_new))
+    
+    # set overrides and trigger recompute
+    V_override(V_new)
+    C_override(C_new)
+    import_bump(import_bump() + 1L)
+    
+    showNotification(sprintf("Imported %d voters and %d candidates.", nrow(V_new), nrow(C_new)), type="message")
+  })
+  
+  # clear overrides + clear the file input UI on Randomize
+  observeEvent(input$randomize, {
+    V_override(NULL); 
+    C_override(NULL)
+    import_bump(import_bump() + 1L)   # your existing line (keep if you use it)
+    import_reset(import_reset() + 1L) # <— rebuilds fileInput, clearing name + progress
+  })
+  
+  s <- function(n) ifelse(n == 1, "", "s") # text explanation pluralization variable
   
   # update maxes + labels when Example Type changes (no feedback loop)
   observeEvent(input$example_type, {
@@ -792,8 +1014,269 @@ server <- function(input, output, session) {
     HTML(explanation_html())
   })
   
+  output$criteria_help <- renderUI({
+    HTML(paste0(
+      "<h4>What these criteria mean</h4>",
+      
+      "<p><b>Majority Winner</b> — If only one candidate is ranked 1st by more than 50% of voters, ",
+      "that candidate must win. ",
+      "<i>Assessment:</i> Pass if the method elects that candidate; Fail otherwise; N/A if no candidate has over 50% of the votes",
+      " (Note: A tie for most first-place votes does not count as a majority winner.)</p>",
+      
+      "<p><b>Majority Loser</b> — If only one candidate is ranked last by more than 50% of voters, ",
+      "that candidate must not win. ",
+      "<i>Assessment:</i> Pass if the method does not elect that candidate; Fail if it does; N/A if no such candidate exists.</p>",
+      
+      "<p><b>Plurality Leader</b> — Every winning candidate must be among the candidate(s) with the most first-choice votes. ",
+      "<i>Assessment:</i> Pass if all winners are in the plurality-leader set; Fail if any winner is outside it.</p>",
+      
+      "<p><b>Mutual Majority (MMC)</b> — If a majority of voters ranks every member of some group of candidates above every non-member, ",
+      "the winner must come from that group. ",
+      "<i>Assessment:</i> Pass if all winners are inside at least one such majority-preferred group; Fail if any winner is outside; N/A if no such group exists in this profile.</p>",
+      
+      "<p><b>Condorcet Winner</b> — If only one candidate beats every other candidate in head-to-head majority matchups, ",
+      "that candidate must win. ",
+      "<i>Assessment:</i> Pass if the method elects that candidate; Fail otherwise; N/A if no unique Condorcet winner exists (including any pairwise ties).</p>",
+      
+      "<p><b>Independence of Irrelevant Alternatives (IIA)</b> — Removing any non-winning candidate should not change who wins ",
+      "among the remaining candidates. ",
+      "<i>Assessment:</i> Pass if the winner set over the remaining options never changes; Fail if it changes even once.</p>"
+    ))
+  })
   
-  voterData <- eventReactive(list(input$randomize, input$total_voters, input$example_type), {
+  
+  
+  
+  # ---- voting-criteria helpers ----
+
+  # plurality leaders (indices of candidates with the most 1st-choice votes)
+  plurality_leader_idx <- function(rm) {
+    K <- ncol(rm)
+    counts <- tabulate(rm[,1], nbins = K)
+    which(counts == max(counts))
+  }
+  
+  # Pass if every method winner is among the plurality leaders.
+  # If no winners (shouldn't happen) -> "N/A".
+  assess_plurality_respect <- function(method_winners, pl_idx, Cids) {
+    if (!length(method_winners)) return("N/A")
+    pl_ids <- Cids[pl_idx]
+    if (length(pl_ids) == 0L) return("N/A")             # degenerate
+    if (all(method_winners %in% pl_ids)) "Pass" else "Fail"
+  }
+  
+  # Mutual Majority Criterion: if some set S is ranked above all others
+  # by >50% of voters, the winner must be in S. If such S exists and the
+  # winner is outside S -> Fail; if no such S -> N/A; otherwise Pass.
+  assess_mutual_majority <- function(method_winners, rm, Cids) {
+    N <- nrow(rm); K <- ncol(rm)
+    if (!length(method_winners)) return("N/A")
+    
+    # position matrix: pos[i,c] = rank position (1 = top)
+    pos <- matrix(0L, N, K)
+    for (i in seq_len(N)) pos[i, rm[i,]] <- seq_len(K)
+    
+    # search all non-empty proper subsets S
+    has_mm <- FALSE
+    for (m in 1:(K - 1L)) {
+      combs <- combn(K, m, simplify = FALSE)
+      for (S in combs) {
+        Scomp <- setdiff(seq_len(K), S)
+        # voter i counts if max rank of S < min rank of outside S
+        voters <- vapply(seq_len(N), function(i) {
+          max(pos[i, S]) < min(pos[i, Scomp])
+        }, logical(1))
+        if (sum(voters) > N/2) {
+          has_mm <- TRUE
+          S_ids <- Cids[S]
+          if (!all(method_winners %in% S_ids)) return("Fail")
+        }
+      }
+    }
+    if (has_mm) "Pass" else "N/A"
+  }
+  
+  # Majority Winner: a candidate ranked 1st by > 50% of voters
+  majority_winner_idx <- function(rm) {
+    N <- nrow(rm); K <- ncol(rm)
+    counts <- tabulate(rm[,1], nbins = K)
+    idx <- which(counts > N/2)
+    if (length(idx) == 1L) idx else integer(0)
+  }
+  
+  # Majority Loser: a candidate ranked last by > 50% of voters
+  majority_loser_idx <- function(rm) {
+    N <- nrow(rm); K <- ncol(rm)
+    last <- rm[, K]
+    counts <- tabulate(last, nbins = K)
+    idx <- which(counts > N/2)
+    if (length(idx) == 1L) idx else integer(0)
+  }
+  
+  # Pairwise matrix (# voters pref i over j) and Condorcet winner index (if any)
+  pairwise_wins <- function(rm) {
+    N <- nrow(rm); K <- ncol(rm)
+    pos <- matrix(0L, N, K)
+    for (i in seq_len(N)) pos[i, rm[i,]] <- seq_len(K)
+    W <- matrix(0L, K, K)
+    for (i in seq_len(K)) for (j in seq_len(K)) if (i != j) W[i,j] <- sum(pos[,i] < pos[,j])
+    W
+  }
+  condorcet_winner_idx <- function(rm) {
+    N <- nrow(rm); K <- ncol(rm)
+    W <- pairwise_wins(rm)
+    idx <- which(rowSums(W > N/2) == (K - 1L))
+    if (length(idx) == 1L) idx else integer(0)
+  }
+  
+  # Compute winners (as IDs) for each method on a given profile
+  winners_for <- function(method, D, rm, ids, thr){
+    K <- ncol(rm)
+    if (method == "plurality") {
+      counts <- tabulate(rm[,1], nbins = K)
+      ids[counts == max(counts)]
+    } else if (method == "ranked_choice") {
+      out <- rcv_irv(rm)
+      if (is.na(out$winner_index)) ids[out$tie_indices] else ids[out$winner_index]
+    } else if (method == "approval") {
+      approvals <- colSums(D <= thr)
+      ids[approvals == max(approvals)]
+    } else if (method == "score") {
+      md <- colMeans(D)
+      ids[abs(md - min(md)) < 1e-12]
+    } else if (method == "borda") {
+      # reuse Borda logic
+      pos <- matrix(0L, nrow = nrow(rm), ncol = K)
+      for (i in seq_len(nrow(rm))) pos[i, rm[i,]] <- seq_len(K)
+      pts <- colSums(K - pos)
+      ids[pts == max(pts)]
+    } else {
+      character(0)
+    }
+  }
+  
+  # Remove a candidate (by index) from D and rm
+  remove_candidate <- function(D, rm, rem_idx){
+    D2 <- D[, -rem_idx, drop = FALSE]
+    K  <- ncol(rm)
+    rm2 <- t(vapply(seq_len(nrow(rm)), function(i){
+      row <- rm[i, ]
+      row <- row[row != rem_idx]
+      # reindex: shift down anything above removed index
+      row[row > rem_idx] <- row[row > rem_idx] - 1L
+      as.integer(row)
+    }, integer(K - 1L)))
+    list(D = D2, rm = rm2)
+  }
+  
+  # Empirical IIA probe: does removing any non-winner change the winner set?
+  check_iia <- function(method, D, rm, ids, thr){
+    orig <- winners_for(method, D, rm, ids, thr)
+    if (!length(orig)) return("N/A")
+    orig_idx <- match(orig, ids)
+    losers   <- setdiff(seq_along(ids), orig_idx)
+    if (!length(losers)) return("Pass")  # nothing irrelevant to remove
+    
+    for (rem in losers){
+      pr <- remove_candidate(D, rm, rem)
+      ids2 <- ids[-rem]
+      new  <- winners_for(method, pr$D, pr$rm, ids2, thr)
+      expected <- setdiff(orig, ids[rem])  # original winners among remaining
+      # If the winner set over the remaining options changes, flag a violation
+      if (!setequal(new, expected)) return("Fail")
+    }
+    "Pass"
+  }
+  
+  
+  # Build the criteria matrix for the current scenario
+  criteria_df <- reactive({
+    ids <- candidateData()$id
+    D   <- dist_matrix()
+    rm  <- rank_matrix()
+    thr <- input$approval_thresh
+    N   <- nrow(rm)
+    
+    # criterion “targets” from the current profile
+    mw  <- majority_winner_idx(rm)   # may be NA
+    ml  <- majority_loser_idx(rm)    # may be NA
+    cw  <- condorcet_winner_idx(rm)  # may be NA
+    pl  <- plurality_leader_idx(rm) 
+    
+    systems <- c("Plurality" = "plurality",
+                 "Ranked-Choice" = "ranked_choice",
+                 "Approval" = "approval",
+                 "Cardinal (Score)" = "score",
+                 "Borda Count" = "borda")
+    
+    rows <- lapply(names(systems), function(label){
+      code <- systems[[label]]
+      w    <- winners_for(code, D, rm, ids, thr)
+      
+      # Majority Winner (must elect the unique majority favorite)
+      mw_cell <- if (length(mw) == 0L) "N/A" else if (length(w) == 1L && w == ids[mw]) "Pass" else "Fail"
+      
+      # Majority Loser (must not elect the majority last-place)
+      ml_cell <- if (length(ml) == 0L) "N/A" else if (ids[ml] %in% w) "Fail" else "Pass"
+      
+      # Condorcet Winner (must elect the unique CW; ties count as Fail)
+      cw_cell <- if (length(cw) == 0L) "N/A" else if (length(w) == 1L && w == ids[cw]) "Pass" else "Fail"
+      
+      # plurality leader
+      pl_cell <- assess_plurality_respect(w, pl, ids)
+      
+      # mutual marjoity
+      mm_cell <- assess_mutual_majority(w, rm, ids)
+      
+      # IIA (empirical removal test)
+      iia_cell <- check_iia(code, D, rm, ids, thr)
+      
+      tibble(`Voting system` = label,
+             `Majority Winner` = mw_cell,
+             `Majority Loser`  = ml_cell,
+             `Plurality Leader`  = pl_cell,
+             `Mutual Majority`  = mm_cell,
+             `Condorcet Winner`= cw_cell,
+             `IIA`             = iia_cell)
+    })
+    bind_rows(rows)
+  })
+  
+  output$criteria_dt <- renderDT({
+    df  <- criteria_df()
+    pal <- c("Pass" = "#1a7f37", "Fail" = "#d1242f", "N/A" = "#6e7781")
+    
+    # all columns except the first (“Voting system”)
+    crit_cols <- setdiff(names(df), "Voting system")
+    crit_idx0 <- match(crit_cols, names(df)) - 1L   # DT uses 0-based indices
+    
+    dt <- datatable(
+      df,
+      class   = "display nowrap compact",
+      options = list(
+        dom = "t", paging = FALSE, autoWidth = TRUE,
+        columnDefs = list(list(className = "dt-center", targets = crit_idx0))
+      ),
+      rownames = FALSE
+    )
+    
+    # color each criteria column
+    for (col in crit_cols) {
+      dt <- dt %>% formatStyle(
+        col,
+        backgroundColor = styleEqual(names(pal), unname(pal)),
+        color = "white"
+      )
+    }
+    dt
+  })
+  
+  
+  
+  voterData <- eventReactive(list(input$randomize, input$total_voters, input$example_type, import_bump()), {
+    ov <- V_override()
+    if (!is.null(ov)) return(ov)  # imported data
+    
     if (identical(input$example_type, "1-dimension")) {
       tibble(
         x = sample_min_gap_int(input$total_voters, lo = -100, hi = 100, min_gap = 2),
@@ -807,10 +1290,12 @@ server <- function(input, output, session) {
     }
   }, ignoreInit = FALSE)
   
-  
   candidate_ids <- reactive(LETTERS[seq_len(input$candidate_count)])
   
-  candidateData <- eventReactive(list(input$randomize, input$candidate_count, input$example_type), {
+  candidateData <- eventReactive(list(input$randomize, input$candidate_count, input$example_type, import_bump()), {
+    oc <- C_override()
+    if (!is.null(oc)) return(oc)  # imported data
+    
     if (identical(input$example_type, "1-dimension")) {
       tibble(
         x  = sample_min_gap_int(input$candidate_count, lo = -98, hi = 98, min_gap = 2),
@@ -825,7 +1310,6 @@ server <- function(input, output, session) {
       )
     }
   }, ignoreInit = FALSE)
-  
   
   dist_matrix <- reactive({
     V <- voterData(); C <- candidateData()
