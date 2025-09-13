@@ -7,14 +7,14 @@ An interactive Shiny app for exploring how different voting methods select winne
 ## Features
 
 - **Voting systems**  
-  - **Plurality** (most first-place votes)  
-  - **Ranked-Choice (IRV)** with a Borda-like tiebreaker, alphabetical as last resort; stacked round visualization  
-  - **Approval** with adjustable **distance threshold**; turnout percentages exclude “Didn’t vote” (non-approvers)  
-  - **Cardinal (Score)** using mean distance (lower is better)  
-  - **Borda** (basic scheme): with *K* candidates, ranks score `K-1, K-2, …, 0`
-- **Spaces:** 1-D and 2-D electorates with labeled axes
+  - **Plurality**  
+  - **Ranked-Choice Voting**   
+  - **Approval** with adjustable **distance threshold** 
+  - **Cardinal (Score)** using spatial distance   
+  - **Borda Count** 
 - **Scales:** up to **20 candidates** and **500 voters**
 - **Visuals:**
+  - Choose between 1-D and 2-D examples
   - Top-aligned layout: map on the left, results on the right
   - 50% guide line/label on bar charts
   - 2-D approval regions drawn as circles (clipped to frame)
