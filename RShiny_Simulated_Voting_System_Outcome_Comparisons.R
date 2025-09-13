@@ -493,7 +493,19 @@ ui <- fluidPage(
                        sliderInput("approval_thresh","Approval distance threshold", min=5,max=150,value=50,step=5)
       ),
       
-      # --- toolbar row
+      selectInput(
+        "scenario",
+        "Scenario:",
+        choices = c(
+          "Random",
+          "Center squeeze (1D)",
+          "Spoiler effect (1D)",
+          "Majority favorite ignored (Borda) (1D)",
+          "Condorcet cycle (2D)"
+        ),
+        selected = "Random"
+      ),
+      
       tags$div(class="toolbar-inline",
                actionButton("randomize","Randomize Data"),
                downloadButton("export_csv", "Export CSV"),
@@ -715,11 +727,11 @@ server <- function(input, output, session) {
   
   # clear overrides + clear the file input UI on Randomize
   observeEvent(input$randomize, {
-    V_override(NULL); 
-    C_override(NULL)
-    import_bump(import_bump() + 1L)   # your existing line (keep if you use it)
-    import_reset(import_reset() + 1L) # <— rebuilds fileInput, clearing name + progress
+    V_override(NULL); C_override(NULL)
+    updateSelectInput(session, "scenario", selected = "Random")
+    session$sendCustomMessage("toolbarReset", "import_csv")
   })
+  
   
   s <- function(n) ifelse(n == 1, "", "s") # text explanation pluralization variable
   
@@ -1044,8 +1056,68 @@ server <- function(input, output, session) {
     ))
   })
   
+  # --- Scenario overrides (reuse same mechanism as import) ---
+  V_override <- reactiveVal(NULL)   # tibble(x, y)
+  C_override <- reactiveVal(NULL)   # tibble(x, y, id)
   
+  # A few example presets. Add as many as you want.
+  scenario_bank <- list(
+    "Random" = NULL,  # special key
+    "Center squeeze (1D)" = list(
+      type = "1d",
+      V = tibble(x = c(-85,-80,-78,-76, -15,-8,0,8, 76,78,85), y = 0),
+      C = tibble(id = c("A","B","C"), x = c(-85, 0, 85), y = 0)
+    ),
+    "Spoiler effect (1D)" = list(
+      type = "1d",
+      V = tibble(x = c(-80,-70,-60,-55,-45,-35,-10, 0, 20, 60, 80), y = 0),
+      C = tibble(id = c("A","B","C"), x = c(-75, -50, 25), y = 0)
+    ),
+    # Majority-favorite (A) can lose under Borda in some layouts.
+    "Majority favorite ignored (Borda) (1D)" = list(
+      type = "1d",
+      V = tibble(x = c(rep(-90,7), -10, -5, 5, 10), y = 0),
+      C = tibble(id = c("A","B","C"), x = c(-100, -15, 20), y = 0)
+    ),
+    # Simple 2D cycle-ish demo (tweak as desired)
+    "Condorcet cycle (2D)" = list(
+      type = "2d",
+      V = tibble(
+        x = c(-60,-55,-50,-10,-5,  0,  5, 10, 50,55,60),
+        y = c(  0,  5, -5, 30,25,  0, -25,-30,  5,-5, 0)
+      ),
+      C = tibble(id = c("A","B","C"),
+                 x = c(-60, 5, 60),
+                 y = c(  0,30,  0))
+    )
+  )
   
+  observeEvent(input$scenario, {
+    nm <- input$scenario
+    sc <- scenario_bank[[nm]]
+    
+    if (is.null(sc) || identical(nm, "Random")) {
+      # back to random mode (no overrides)
+      V_override(NULL); C_override(NULL)
+      # keep current example type & sizes; user can hit Randomize for fresh draw
+      # also clear any import progress/filename
+      session$sendCustomMessage("toolbarReset", "import_csv")
+      return()
+    }
+    
+    # Apply the scenario
+    V_override(sc$V)
+    C_override(sc$C)
+    
+    # Sync UI knobs with the scenario
+    updateSelectInput(session, "example_type",
+                      selected = if (identical(sc$type, "1d")) "1-dimension" else "2-dimension")
+    updateNumericInput(session, "total_voters",     value = nrow(sc$V))
+    updateNumericInput(session, "candidate_count",  value = nrow(sc$C))
+    
+    # Clear any import status
+    session$sendCustomMessage("toolbarReset", "import_csv")
+  })
   
   # ---- voting-criteria helpers ----
 
@@ -1271,45 +1343,51 @@ server <- function(input, output, session) {
     dt
   })
   
-  
-  
-  voterData <- eventReactive(list(input$randomize, input$total_voters, input$example_type, import_bump()), {
-    ov <- V_override()
-    if (!is.null(ov)) return(ov)  # imported data
-    
-    if (identical(input$example_type, "1-dimension")) {
-      tibble(
-        x = sample_min_gap_int(input$total_voters, lo = -100, hi = 100, min_gap = 2),
-        y = rep(0, input$total_voters)
-      )
-    } else {
-      tibble(
-        x = rand_dimension_voters(input$total_voters),
-        y = rand_dimension_voters(input$total_voters)
-      )
-    }
-  }, ignoreInit = FALSE)
+  voterData <- eventReactive(
+    list(input$randomize, input$total_voters, input$example_type, V_override()),
+    {
+      vo <- V_override()
+      if (!is.null(vo)) return(vo)
+      
+      if (identical(input$example_type, "1-dimension")) {
+        tibble(
+          x = sample_min_gap_int(input$total_voters, lo = -100, hi = 100, min_gap = 2),
+          y = rep(0, input$total_voters)
+        )
+      } else {
+        tibble(
+          x = rand_dimension_voters(input$total_voters),
+          y = rand_dimension_voters(input$total_voters)
+        )
+      }
+    },
+    ignoreInit = FALSE
+  )
   
   candidate_ids <- reactive(LETTERS[seq_len(input$candidate_count)])
   
-  candidateData <- eventReactive(list(input$randomize, input$candidate_count, input$example_type, import_bump()), {
-    oc <- C_override()
-    if (!is.null(oc)) return(oc)  # imported data
-    
-    if (identical(input$example_type, "1-dimension")) {
-      tibble(
-        x  = sample_min_gap_int(input$candidate_count, lo = -98, hi = 98, min_gap = 2),
-        y  = rep(0, input$candidate_count),
-        id = candidate_ids()
-      )
-    } else {
-      tibble(
-        x  = rand_dimension_candidates(input$candidate_count),
-        y  = rand_dimension_candidates(input$candidate_count),
-        id = candidate_ids()
-      )
-    }
-  }, ignoreInit = FALSE)
+  candidateData <- eventReactive(
+    list(input$randomize, input$candidate_count, input$example_type, C_override()),
+    {
+      co <- C_override()
+      if (!is.null(co)) return(co)
+      
+      if (identical(input$example_type, "1-dimension")) {
+        tibble(
+          x  = sample_min_gap_int(input$candidate_count, lo = -98, hi = 98, min_gap = 2),
+          y  = rep(0, input$candidate_count),
+          id = candidate_ids()
+        )
+      } else {
+        tibble(
+          x  = rand_dimension_candidates(input$candidate_count),
+          y  = rand_dimension_candidates(input$candidate_count),
+          id = candidate_ids()
+        )
+      }
+    },
+    ignoreInit = FALSE
+  )
   
   dist_matrix <- reactive({
     V <- voterData(); C <- candidateData()
