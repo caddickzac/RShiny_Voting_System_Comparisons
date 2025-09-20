@@ -236,7 +236,7 @@ and_join <- function(x) {
 sample_min_gap_int <- function(n, lo, hi, min_gap = 2) {
   if (n < 1) return(integer(0))
   pool <- lo:hi
-  if (n > length(pool)) stop("range too small for requested n")
+  if (n > length(pool)) stop(" too small for requested n")
   sel <- integer(0)
   while (length(sel) < n) {
     if (!length(pool)) stop("Not enough positions for the requested min_gap.")
@@ -498,10 +498,10 @@ ui <- fluidPage(
         "Scenario:",
         choices = c(
           "Random",
-          "Center squeeze (1D)",
-          "Spoiler effect (1D)",
-          "Majority favorite ignored (Borda) (1D)",
-          "Condorcet cycle (2D)"
+          "Center Squeeze (1D)",
+          "Spoiler Effect (1D)",
+          "Mutual Majority Criterion (1D)",
+          "Condorcet Cycle (2D)"
         ),
         selected = "Random"
       ),
@@ -555,28 +555,30 @@ server <- function(input, output, session) {
   import_bump <- reactiveVal(0)     # trigger to recompute eventReactives after import
   
   output$export_csv <- downloadHandler(
-    filename = function() {
-      sprintf("voting-scenario-%s.csv", Sys.Date())
-    },
+    filename = function() sprintf("voting-scenario-%s.csv", Sys.Date()),
     contentType = "text/csv",
     content = function(file) {
-      # current data
       V <- voterData()
       C <- candidateData()
       df <- dplyr::bind_rows(
         dplyr::transmute(V, x = x, y = y, label = "voter"),
         dplyr::transmute(C, x = x, y = y, label = paste0("candidate_", tolower(id)))
       )
-      ex_type <- if (identical(input$example_type, "1-dimension")) "1-Dimension" else "2-Dimension"
-      
-      # write a top metadata line, then a blank line, then the table header + rows
-      con <- file(file, open = "wt", encoding = "UTF-8")
-      on.exit(close(con), add = TRUE)
-      writeLines(sprintf("Example Type,%s", ex_type), con)
-      writeLines("", con)
-      utils::write.table(df, con, sep = ",", row.names = FALSE, col.names = TRUE, quote = FALSE)
+      utils::write.csv(df, file, row.names = FALSE)  # <-- header is just x,y,label
     }
   )
+  
+  # Find the real header row 'x,y,label' (in case an old file still has "Example Type" lines)
+  read_scenario_csv <- function(path) {
+    lines <- readLines(path, warn = FALSE)
+    lines <- sub("^\ufeff", "", lines)  # strip BOM if present
+    hdr_rx  <- "^\\s*x\\s*,\\s*y\\s*,\\s*label\\s*$"
+    hdr_row <- which(grepl(hdr_rx, tolower(lines)))[1]
+    if (is.na(hdr_row)) hdr_row <- 1L  # assume simple file with header on first row
+    utils::read.csv(text = paste(lines[hdr_row:length(lines)], collapse = "\n"),
+                    stringsAsFactors = FALSE, check.names = FALSE)
+  }
+  
   
   # Rebuild handle for the Import CSV control
   import_reset <- reactiveVal(0)
@@ -591,137 +593,88 @@ server <- function(input, output, session) {
   
   observeEvent(input$import_csv, {
     req(input$import_csv$datapath)
-    path <- input$import_csv$datapath
-    
-    # read all lines so we can parse the optional metadata preface
-    lines <- readLines(path, warn = FALSE, encoding = "UTF-8")
-    if (!length(lines)) {
-      showNotification("Import failed: file is empty.", type = "error"); return()
+    df <- try(read_scenario_csv(input$import_csv$datapath), silent = TRUE)
+    if (inherits(df, "try-error")) {
+      showNotification("Import failed: could not read CSV.", type = "error", duration = 6); return()
     }
     
-    # parse optional "Example Type,..." header
-    ex_type_in_file <- NULL
-    i <- 1L
-    if (grepl("^\\s*Example\\s*Type\\s*,", lines[i], ignore.case = TRUE)) {
-      parts <- strsplit(lines[i], ",", fixed = TRUE)[[1]]
-      ex_type_in_file <- trimws(parts[2])
-      i <- i + 1L
-      # skip one optional blank line
-      if (i <= length(lines) && trimws(lines[i]) == "") i <- i + 1L
-    }
-    
-    # everything from i..end is the CSV with header x,y,label
-    csv_txt <- paste(lines[i:length(lines)], collapse = "\n")
-    df <- tryCatch(
-      read.csv(text = csv_txt, stringsAsFactors = FALSE, check.names = FALSE),
-      error = function(e) NULL
-    )
-    if (is.null(df)) {
-      showNotification("Import failed: could not parse CSV data block.", type = "error"); return()
-    }
-    
-    # normalize column names, validate columns
+    # normalize + validate columns
     names(df) <- tolower(trimws(names(df)))
-    needed <- c("x","y","label")
-    if (!all(needed %in% names(df))) {
-      showNotification("Import failed: CSV must have columns x, y, label.", type = "error"); return()
+    if (!all(c("x","y","label") %in% names(df))) {
+      showNotification("Import failed: CSV must have columns x, y, label.", type = "error", duration = 6); return()
     }
-    
-    # coerce + basic bounds
     df$x <- suppressWarnings(as.numeric(df$x))
     df$y <- suppressWarnings(as.numeric(df$y))
     if (any(!is.finite(df$x)) || any(!is.finite(df$y))) {
-      showNotification("Import failed: x and y must be numeric.", type = "error"); return()
+      showNotification("Import failed: x and y must be numeric.", type = "error", duration = 6); return()
     }
     if (any(df$x < -100 | df$x > 100 | df$y < -100 | df$y > 100)) {
-      showNotification("Import failed: all x and y must be between -100 and 100.", type = "error"); return()
+      showNotification("Import failed: all x and y must be in [-100, 100].", type = "error", duration = 6); return()
     }
     
-    # split voters vs candidates
+    # split rows
     df$label <- tolower(trimws(df$label))
     voters <- dplyr::filter(df, label == "voter")
-    cands  <- dplyr::filter(df, grepl("^candidate_[a-z]$", label))
+    cands  <- dplyr::filter(df, grepl("^candidate[_-]?([a-z])$", label))
+    if (!nrow(voters)) { showNotification("Import failed: no voters found.", type="error", duration = 6); return() }
+    if (!nrow(cands))  { showNotification("Import failed: no candidates found.", type="error", duration = 6); return() }
     
-    if (!nrow(voters)) { showNotification("Import failed: no voters found.", type="error"); return() }
-    if (!nrow(cands))  { showNotification("Import failed: no candidates found.", type="error"); return() }
-    
-    # extract candidate letters
-    cands$letter <- toupper(sub("^candidate_([a-z])$", "\\1", cands$label))
-    # enforce one row per candidate id
+    # candidate IDs (A..)
+    cands$letter <- toupper(sub("^candidate[_-]?([a-z])$", "\\1", cands$label))
     dup_ids <- cands$letter[duplicated(cands$letter)]
     if (length(dup_ids)) {
       showNotification(sprintf("Import failed: duplicate rows for candidate(s): %s.",
                                paste(sort(unique(dup_ids)), collapse=", ")),
-                       type="error"); return()
+                       type="error", duration = 6); return()
     }
-    
-    # example type from file -> normalize to app values
-    if (!is.null(ex_type_in_file)) {
-      ex_norm <- tolower(gsub("\\s+", "-", ex_type_in_file))
-      if (ex_norm %in% c("1-dimension","1-d","1d","1dimension")) ex_norm <- "1-dimension"
-      if (ex_norm %in% c("2-dimension","2-d","2d","2dimension","two-dimension")) ex_norm <- "2-dimension"
-      if (!ex_norm %in% c("1-dimension","2-dimension")) {
-        showNotification("Import failed: unknown Example Type in header.", type="error"); return()
-      }
-      updateSelectInput(session, "example_type", selected = ex_norm)
-    }
-    
-    # enforce candidate IDs are contiguous from A..K (so palette & tables stay consistent)
+    # enforce contiguous A..K for palette/tables
     K <- nrow(cands)
-    expected_ids <- LETTERS[seq_len(K)]
-    if (!setequal(cands$letter, expected_ids)) {
-      showNotification(
-        sprintf("Import failed: candidate labels must be exactly candidate_%s..candidate_%s with no gaps.",
-                tolower(expected_ids[1]), tolower(expected_ids[K])),
-        type="error"
-      )
-      return()
+    expected <- LETTERS[seq_len(K)]
+    if (!setequal(cands$letter, expected)) {
+      showNotification(sprintf(
+        "Import failed: candidate labels must be candidate_%s..candidate_%s with no gaps.",
+        tolower(expected[1]), tolower(expected[K])
+      ), type="error", duration = 6); return()
     }
-    # order candidates A..K
     cands <- dplyr::arrange(cands, letter)
     
-    # per-type geometry/spacings
-    MIN_GAP_1D <- 2
+    # --- Auto pick 1D vs 2D based on y-values
+    is_1d <- all(abs(df$y) < 1e-9)
+    updateSelectInput(session, "example_type", selected = if (is_1d) "1-dimension" else "2-dimension")
     
-    if (identical(input$example_type, "1-dimension")) {
-      # 1-D: force y=0 (and validate near-0)
-      if (any(abs(voters$y) > 1e-9) || any(abs(cands$y) > 1e-9)) {
-        showNotification("Import failed: in 1-Dimension, all y must be 0.", type="error"); return()
-      }
-      voters$y <- 0; cands$y <- 0
-      
-      # min spacing along x (voters & candidates)
+    # Per-type geometry checks
+    MIN_GAP_1D <- 2
+    if (is_1d) {
+      # enforce spacing on x for voters & candidates
       vxs <- sort(voters$x); cxs <- sort(cands$x)
       if (length(vxs) > 1 && min(diff(vxs)) < MIN_GAP_1D) {
         showNotification(sprintf("Import failed: in 1-Dimension, voters must be ≥ %d units apart on x.", MIN_GAP_1D),
-                         type="error"); return()
+                         type="error", duration = 6); return()
       }
       if (length(cxs) > 1 && min(diff(cxs)) < MIN_GAP_1D) {
         showNotification(sprintf("Import failed: in 1-Dimension, candidates must be ≥ %d units apart on x.", MIN_GAP_1D),
-                         type="error"); return()
+                         type="error", duration = 6); return()
       }
+      voters$y <- 0; cands$y <- 0
     } else {
-      # 2-D: voters cannot occupy identical coordinates
+      # 2-D: no duplicate voter coordinates
       pair_key <- paste(round(voters$x, 8), round(voters$y, 8))
       if (any(duplicated(pair_key))) {
         showNotification("Import failed: voters cannot occupy identical (x,y) points in 2-Dimension.",
-                         type="error"); return()
+                         type="error", duration = 6); return()
       }
     }
     
-    # build override tibbles in the app’s expected shape
+    # Build overrides and sync UI
     V_new <- tibble::tibble(x = as.numeric(voters$x), y = as.numeric(voters$y))
     C_new <- tibble::tibble(x = as.numeric(cands$x),  y = as.numeric(cands$y), id = cands$letter)
-    
-    # update numeric inputs (will also keep your side widgets consistent)
     updateNumericInput(session, "total_voters",   value = nrow(V_new))
     updateNumericInput(session, "candidate_count", value = nrow(C_new))
-    
-    # set overrides and trigger recompute
-    V_override(V_new)
-    C_override(C_new)
+    V_override(V_new); C_override(C_new)
     import_bump(import_bump() + 1L)
     
+    # tidy the file input UI (clear filename + hide progress), if you kept the JS hook
+    session$sendCustomMessage("toolbarReset", "import_csv")
     showNotification(sprintf("Imported %d voters and %d candidates.", nrow(V_new), nrow(C_new)), type="message")
   })
   
@@ -1065,30 +1018,50 @@ server <- function(input, output, session) {
     "Random" = NULL,  # special key
     "Center squeeze (1D)" = list(
       type = "1d",
-      V = tibble(x = c(-85,-80,-78,-76, -15,-8,0,8, 76,78,85), y = 0),
-      C = tibble(id = c("A","B","C"), x = c(-85, 0, 85), y = 0)
+      V = tibble(x = c(
+        -95, -90, -85, -82, -75, -72, -66, -60, # liberal > centrist > conservative)
+        -7, # centrist > liberal > conservative
+        -1, 4, 8, 16, 20, # centrist > conservative > liberal
+        55, 60, 65, 75, 80, 90, 95), # conservative > centrist > liberal
+        y = 0),
+      C = tibble(id = c("A","B","C"), x = c(-70, 11, 60), y = 0)
     ),
     "Spoiler effect (1D)" = list(
       type = "1d",
-      V = tibble(x = c(-80,-70,-60,-55,-45,-35,-10, 0, 20, 60, 80), y = 0),
-      C = tibble(id = c("A","B","C"), x = c(-75, -50, 25), y = 0)
+      V = tibble(x = c(
+        -88, -82, -76, -68, -60, -55, # liberal > centrist > conservative
+        -13, # centrist > liberal > conservative
+        -3, 5, 18, 30, # centrist > conservative > liberal
+        45, 50), # conservative > centrist > liberal
+        y = 0),
+      C = tibble(id = c("A","B","C"), x = c(-80, -20, 64), y = 0)
     ),
-    # Majority-favorite (A) can lose under Borda in some layouts.
-    "Majority favorite ignored (Borda) (1D)" = list(
+    "Mutal Majority Criterion (1D)" = list(
       type = "1d",
-      V = tibble(x = c(rep(-90,7), -10, -5, 5, 10), y = 0),
-      C = tibble(id = c("A","B","C"), x = c(-100, -15, 20), y = 0)
+      V = tibble(x = c(
+        93, 87, 81, 75, 70, 66, 63, 57,  # conservative > centrist > liberal
+        15, # centrist > conservative > liberal
+        -96, -91,  -83,  -77,  -72, -67, -56),  # liberal > centrist > conservative
+        y = 0),
+      C = tibble(id = c("A","B","C"), x = c(-75, 20, 75), y = 0)
     ),
     # Simple 2D cycle-ish demo (tweak as desired)
     "Condorcet cycle (2D)" = list(
       type = "2d",
       V = tibble(
-        x = c(-60,-55,-50,-10,-5,  0,  5, 10, 50,55,60),
-        y = c(  0,  5, -5, 30,25,  0, -25,-30,  5,-5, 0)
+        x = c(
+          -28,-30,-35,-29,-23,-26,-27,-18, # A > B > C 
+          65,70,66,55,85,58, # B > C > A
+          22,25,16,23,20), # C > A > B
+        y = c(
+          14,16,12,20,8,13,10,17, # A > B > C 
+          5,10,-2,8,15,-5, # B > C > A
+          -55,-45,-48,-58,-49 # C > A > B
+        )
       ),
       C = tibble(id = c("A","B","C"),
-                 x = c(-60, 5, 60),
-                 y = c(  0,30,  0))
+                 x = c(-20, 60, 38),
+                 y = c(0, 10, -52))
     )
   )
   
