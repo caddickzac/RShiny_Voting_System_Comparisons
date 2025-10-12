@@ -9,6 +9,7 @@ library(shinyjs)
 library(ggforce)
 library(cowplot)
 library(DT)
+library(later)
 
 # ---------------- helpers ----------------
 
@@ -357,7 +358,7 @@ add_bar_value_labels <- function(p, data, x_col, y_col, max_y, digits = 0,
   
   p + geom_text(
     data = df,
-    aes_string(x = x_col, y = "label_y", label = "lbl"),
+    aes(x = .data[[x_col]], y = label_y, label = lbl),
     color = "black", fontface = 2, size = 3.6,
     inherit.aes = FALSE
   )
@@ -467,12 +468,15 @@ ui <- fluidPage(
       Shiny.addCustomMessageHandler('toolbarReset', function(id){
         var c = document.getElementById(id);
         if(!c) return;
-        var fi = c.querySelector('input[type=file]');  // the real file input
+        var fi = c.querySelector('input[type=file]');
         if(fi) fi.value = '';
-        var txt = c.querySelector('.form-control');    // filename text box (hidden above)
+        var txt = c.querySelector('.form-control');
         if(txt){ txt.value=''; txt.placeholder='Select CSV'; }
-        var prog = c.querySelector('.shiny-file-input-progress');
-        if(prog){ prog.style.display='none'; prog.innerHTML=''; }
+        var progs = c.querySelectorAll('.shiny-file-input-progress');
+        progs.forEach(function(p){
+          p.style.display = 'none';
+          p.innerHTML = '';
+        });
       });
     "))
   ),
@@ -549,9 +553,33 @@ server <- function(input, output, session) {
   voters_max     <- reactive(if (identical(input$example_type, "1-dimension")) 50 else 500)
   candidates_max <- reactive(if (identical(input$example_type, "1-dimension")) 8  else 20)
   
+  updating <- reactiveVal(FALSE)
+  
+  # robust guard releaser: wait one tick, then release only when inputs match
+  release_guard_when <- function(session, cond) {
+    armed <- reactiveVal(FALSE)
+    later::later(function() armed(TRUE), 0)  # arm on next event loop tick
+    
+    obs <- NULL
+    obs <- observe({
+      if (isTRUE(armed()) && isTRUE(cond())) {
+        suppress_randomize(FALSE)   # allow normal observers again
+        obs$destroy()
+      }
+    }, priority = 100)
+  }
+  
+  approval_thr <- reactive({
+    if (is.null(input$approval_thresh)) 50 else input$approval_thresh
+  })
+  
+  
   # ---- import/export plumbing ----
   V_override <- reactiveVal(NULL)   # when set, voterData() will use this
   C_override <- reactiveVal(NULL)   # when set, candidateData() will use this
+  suppress_randomize <- reactiveVal(FALSE) # block "auto-randomize" while we are programmatically applying a scenario/import
+  rand_bump <- reactiveVal(0L)
+  bump_random <- function() rand_bump(rand_bump() + 1L)
   import_bump <- reactiveVal(0)     # trigger to recompute eventReactives after import
   
   output$export_csv <- downloadHandler(
@@ -578,7 +606,6 @@ server <- function(input, output, session) {
     utils::read.csv(text = paste(lines[hdr_row:length(lines)], collapse = "\n"),
                     stringsAsFactors = FALSE, check.names = FALSE)
   }
-  
   
   # Rebuild handle for the Import CSV control
   import_reset <- reactiveVal(0)
@@ -640,7 +667,26 @@ server <- function(input, output, session) {
     
     # --- Auto pick 1D vs 2D based on y-values
     is_1d <- all(abs(df$y) < 1e-9)
-    updateSelectInput(session, "example_type", selected = if (is_1d) "1-dimension" else "2-dimension")
+    suppress_randomize(TRUE)
+    freezeReactiveValue(input, "example_type")
+    freezeReactiveValue(input, "total_voters")
+    freezeReactiveValue(input, "candidate_count")
+    
+    target_type <- if (is_1d) "1-dimension" else "2-dimension"
+    
+    # define tv/cc from the parsed data BEFORE we reference them elsewhere
+    tv <- nrow(voters)
+    cc <- nrow(cands)
+    
+    updateSelectInput(session, "example_type", selected = target_type)
+    updateNumericInput(session, "total_voters",   value = tv)
+    updateNumericInput(session, "candidate_count", value = cc)
+    
+    release_guard_when(session, function(){
+      isTRUE(all.equal(input$example_type, target_type)) &&
+        isTRUE(all.equal(input$total_voters,   tv)) &&
+        isTRUE(all.equal(input$candidate_count, cc))
+    })
     
     # Per-type geometry checks
     MIN_GAP_1D <- 2
@@ -672,17 +718,46 @@ server <- function(input, output, session) {
     updateNumericInput(session, "candidate_count", value = nrow(C_new))
     V_override(V_new); C_override(C_new)
     import_bump(import_bump() + 1L)
+    import_reset(import_reset() + 1L)
+    session$sendCustomMessage("toolbarReset", "import_csv")
     
     # tidy the file input UI (clear filename + hide progress), if you kept the JS hook
     session$sendCustomMessage("toolbarReset", "import_csv")
     showNotification(sprintf("Imported %d voters and %d candidates.", nrow(V_new), nrow(C_new)), type="message")
+    session$onFlushed(function() updating(FALSE), once = TRUE)
   })
+  
+  # If user flips 1D/2D, leave any preset, switch to Random, and redraw
+  observeEvent(input$example_type, {
+    if (isTRUE(updating()) || isTRUE(suppress_randomize())) return()
+    if (!is.null(V_override()) || !is.null(C_override())) return()
+    
+    if (!identical(input$scenario, "Random")) {
+      updateSelectInput(session, "scenario", selected = "Random")
+    }
+    bump_random()
+  }, ignoreInit = TRUE, priority = 10)
+  
+  # If user changes voter or candidate counts, same behavior
+  observeEvent(list(input$total_voters, input$candidate_count), {
+    if (isTRUE(updating()) || isTRUE(suppress_randomize())) return()
+    # NEW: if a preset or import override is active, do nothing
+    if (!is.null(V_override()) || !is.null(C_override())) return()
+    if (!identical(input$scenario, "Random")) {
+      updateSelectInput(session, "scenario", selected = "Random")
+    }
+    bump_random()
+  }, ignoreInit = TRUE, priority = 10)
   
   # clear overrides + clear the file input UI on Randomize
   observeEvent(input$randomize, {
     V_override(NULL); C_override(NULL)
     updateSelectInput(session, "scenario", selected = "Random")
+    import_reset(import_reset() + 1L)
     session$sendCustomMessage("toolbarReset", "import_csv")
+    session$onFlushed(function(){
+      later::later(function() updating(FALSE), 0)
+    }, once = TRUE)
   })
   
   
@@ -690,6 +765,7 @@ server <- function(input, output, session) {
   
   # update maxes + labels when Example Type changes (no feedback loop)
   observeEvent(input$example_type, {
+    if (suppress_randomize()) return()
     vm <- voters_max(); cm <- candidates_max()
     tv <- if (is.null(input$total_voters)) 30 else input$total_voters
     cc <- if (is.null(input$candidate_count)) 3 else input$candidate_count
@@ -801,15 +877,22 @@ server <- function(input, output, session) {
   
   # clamp inputs (manual edits)
   observeEvent(input$total_voters, {
+    if (suppress_randomize()) return() 
     vm <- voters_max(); v <- input$total_voters
     if (v > vm)      updateNumericInput(session, "total_voters", value = vm)
     else if (v < 1)  updateNumericInput(session, "total_voters", value = 1)
   }, ignoreInit = TRUE)
   
   observeEvent(input$candidate_count, {
+    if (suppress_randomize()) return() 
     cm <- candidates_max(); v <- input$candidate_count
     if (v > cm)      updateNumericInput(session, "candidate_count", value = cm)
     else if (v < 2)  updateNumericInput(session, "candidate_count", value = 2)
+  }, ignoreInit = TRUE)
+  
+  observeEvent(input$example_type, {
+    if (suppress_randomize()) return()
+    rcv_round(1)
   }, ignoreInit = TRUE)
   
   # ---- downstream reactives ----
@@ -1009,14 +1092,10 @@ server <- function(input, output, session) {
     ))
   })
   
-  # --- Scenario overrides (reuse same mechanism as import) ---
-  V_override <- reactiveVal(NULL)   # tibble(x, y)
-  C_override <- reactiveVal(NULL)   # tibble(x, y, id)
-  
   # A few example presets. Add as many as you want.
   scenario_bank <- list(
     "Random" = NULL,  # special key
-    "Center squeeze (1D)" = list(
+    "Center Squeeze (1D)" = list(
       type = "1d",
       V = tibble(x = c(
         -95, -90, -85, -82, -75, -72, -66, -60, # liberal > centrist > conservative)
@@ -1026,7 +1105,7 @@ server <- function(input, output, session) {
         y = 0),
       C = tibble(id = c("A","B","C"), x = c(-70, 11, 60), y = 0)
     ),
-    "Spoiler effect (1D)" = list(
+    "Spoiler Effect (1D)" = list(
       type = "1d",
       V = tibble(x = c(
         -88, -82, -76, -68, -60, -55, # liberal > centrist > conservative
@@ -1036,7 +1115,7 @@ server <- function(input, output, session) {
         y = 0),
       C = tibble(id = c("A","B","C"), x = c(-80, -20, 64), y = 0)
     ),
-    "Mutal Majority Criterion (1D)" = list(
+    "Mutual Majority Criterion (1D)" = list(
       type = "1d",
       V = tibble(x = c(
         93, 87, 81, 75, 70, 66, 63, 57,  # conservative > centrist > liberal
@@ -1046,7 +1125,7 @@ server <- function(input, output, session) {
       C = tibble(id = c("A","B","C"), x = c(-75, 20, 75), y = 0)
     ),
     # Simple 2D cycle-ish demo (tweak as desired)
-    "Condorcet cycle (2D)" = list(
+    "Condorcet Cycle (2D)" = list(
       type = "2d",
       V = tibble(
         x = c(
@@ -1072,24 +1151,45 @@ server <- function(input, output, session) {
     if (is.null(sc) || identical(nm, "Random")) {
       # back to random mode (no overrides)
       V_override(NULL); C_override(NULL)
-      # keep current example type & sizes; user can hit Randomize for fresh draw
-      # also clear any import progress/filename
+      suppress_randomize(FALSE)        # <-- release the guard here
+      updating(FALSE)                  # (optional) make sure we're not in “updating” mode
+      rcv_round(1)                     # (optional) reset RCV navigator
+      bump_random()
       session$sendCustomMessage("toolbarReset", "import_csv")
       return()
     }
     
-    # Apply the scenario
+    updating(TRUE)
+    suppress_randomize(TRUE)
+    
+    freezeReactiveValue(input, "example_type")
+    freezeReactiveValue(input, "total_voters")
+    freezeReactiveValue(input, "candidate_count")
+    
+    # Apply the scenario overrides
     V_override(sc$V)
     C_override(sc$C)
     
-    # Sync UI knobs with the scenario
-    updateSelectInput(session, "example_type",
-                      selected = if (identical(sc$type, "1d")) "1-dimension" else "2-dimension")
-    updateNumericInput(session, "total_voters",     value = nrow(sc$V))
-    updateNumericInput(session, "candidate_count",  value = nrow(sc$C))
+    # Use the scenario’s declared type (1d/2d) to choose the UI “Example Type”
+    target_type <- if (!is.null(sc$type) && sc$type == "1d") "1-dimension" else "2-dimension"
+    tv <- nrow(sc$V)
+    cc <- nrow(sc$C)
+    
+    updateSelectInput(session, "example_type", selected = target_type)
+    updateNumericInput(session, "total_voters",   value = tv)
+    updateNumericInput(session, "candidate_count", value = cc)
+    
+    release_guard_when(session, function(){
+      isTRUE(all.equal(input$example_type,  target_type)) &&
+        isTRUE(all.equal(input$total_voters,  tv)) &&
+        isTRUE(all.equal(input$candidate_count, cc))
+    })
     
     # Clear any import status
     session$sendCustomMessage("toolbarReset", "import_csv")
+    session$onFlushed(function(){
+      later::later(function() updating(FALSE), 0)
+    }, once = TRUE)
   })
   
   # ---- voting-criteria helpers ----
@@ -1239,7 +1339,7 @@ server <- function(input, output, session) {
     ids <- candidateData()$id
     D   <- dist_matrix()
     rm  <- rank_matrix()
-    thr <- input$approval_thresh
+    thr <- as.numeric(approval_thr())
     N   <- nrow(rm)
     
     # criterion “targets” from the current profile
@@ -1317,7 +1417,7 @@ server <- function(input, output, session) {
   })
   
   voterData <- eventReactive(
-    list(input$randomize, input$total_voters, input$example_type, V_override()),
+    list(input$randomize, rand_bump(), input$total_voters, input$example_type, V_override()),
     {
       vo <- V_override()
       if (!is.null(vo)) return(vo)
@@ -1340,7 +1440,7 @@ server <- function(input, output, session) {
   candidate_ids <- reactive(LETTERS[seq_len(input$candidate_count)])
   
   candidateData <- eventReactive(
-    list(input$randomize, input$candidate_count, input$example_type, C_override()),
+    list(input$randomize, rand_bump(), input$candidate_count, input$example_type, C_override()),
     {
       co <- C_override()
       if (!is.null(co)) return(co)
@@ -1384,7 +1484,7 @@ server <- function(input, output, session) {
   })
   
   approval_summary <- reactive({
-    C <- candidateData(); D <- dist_matrix(); thr <- input$approval_thresh
+    C <- candidateData(); D <- dist_matrix(); thr <- as.numeric(approval_thr())
     approvals <- colSums(D <= thr); didnt <- sum(rowSums(D <= thr) == 0)
     tibble(candidate = c(C$id, "Didn't vote"),
            value = c(approvals, didnt)) |> arrange(desc(value))
@@ -1432,7 +1532,7 @@ server <- function(input, output, session) {
   map_1d_approval <- reactive({
     V <- voterData()
     C <- candidateData()
-    thr <- input$approval_thresh
+    thr <- as.numeric(approval_thr())
     
     # which voters approve at least one candidate (for fading)
     D <- abs(outer(V$x, C$x, `-`))          # 1-D distance
@@ -1524,7 +1624,7 @@ server <- function(input, output, session) {
   })
   
   map_approval <- reactive({
-    V <- voterData(); C <- candidateData(); D <- dist_matrix(); thr <- input$approval_thresh
+    V <- voterData(); C <- candidateData(); D <- dist_matrix(); thr <- as.numeric(approval_thr())
     pal <- setNames(candidate_palette[seq_len(nrow(C))], C$id)
     inside_any <- apply(D <= thr, 1, any)
     V$color_id <- pref1(); V$alpha <- ifelse(inside_any, 0.9, 0.3)
@@ -1638,7 +1738,7 @@ server <- function(input, output, session) {
             aspect.ratio = 1,
             plot.margin = margin(t = 2, r = 5, b = 5, l = 5),
             axis.text.x = element_text(hjust = 0.5)) +
-      labs(title = sprintf("Approval Results (threshold = %s)", input$approval_thresh),
+      labs(title = sprintf("Approval Results (threshold = %s)", approval_thr()),
            x = "Candidate", y = "Approvals")
     
     p <- add_bar_value_labels(p, df, "candidate", "value", input$total_voters, 0)
@@ -1807,15 +1907,15 @@ server <- function(input, output, session) {
     D  <- dist_matrix()          # N x K distances
     rm <- rank_matrix()          # N x K candidate indices, nearest -> farthest
     N  <- nrow(D); K <- ncol(D)
-    thr <- input$approval_thresh
+    thr <- as.numeric(approval_thr())
     
     # Distances as columns A_Distance, B_Distance, ...
-    dist_df <- as_tibble(D)
+    dist_df <- tibble::as_tibble(D, .name_repair = "minimal")
     names(dist_df) <- paste0(C$id, "_Distance")
     
     # Preferences as letters in distance order
     pref_letters <- matrix(C$id[rm], nrow = N, ncol = K)
-    pref_df <- as_tibble(pref_letters)
+    pref_df <- tibble::as_tibble(pref_letters, .name_repair = "minimal")
     names(pref_df) <- paste0("Preference_", seq_len(K))
     
     # New "Approves" (comma-separated IDs, by proximity; blank if none)
