@@ -505,7 +505,9 @@ ui <- fluidPage(
           "Center Squeeze (1D)",
           "Spoiler Effect (1D)",
           "Mutual Majority Criterion (1D)",
-          "Condorcet Cycle (2D)"
+          "Condorcet Cycle (2D)",
+          "Clone Penalty (1D)",
+          "Approval Threshold Sensitivity (1D)"
         ),
         selected = "Random"
       ),
@@ -532,7 +534,7 @@ ui <- fluidPage(
     
     mainPanel(class="main-panel", style="padding-top:0;margin-top:0;",
               plotOutput("plotgraph", width="100%", height="560px"),
-              
+              uiOutput("scenario_desc"),
               conditionalPanel("input.show_explanation",
                                tags$hr(), h4("Explanation of Voting Results"), uiOutput("explanation")),
               conditionalPanel("input.show_voter_data",
@@ -545,7 +547,6 @@ ui <- fluidPage(
     )
   )
 )
-
 
 # ---------------- Server ----------------
 server <- function(input, output, session) {
@@ -617,6 +618,24 @@ server <- function(input, output, session) {
               buttonLabel = "Import CSV", placeholder = "Select CSV",
               width = "220px")
   })
+  
+  output$scenario_desc <- renderUI({
+    nm <- input$scenario
+    if (is.null(nm) || identical(nm, "Random")) return(NULL)
+    
+    desc <- scenario_descriptions[[nm]]
+    if (is.null(desc)) {
+      desc <- HTML(sprintf("<p><b>%s</b> — no description provided yet.</p>", nm))
+    }
+    
+    tags$div(
+      tags$hr(),
+      tags$h4("Scenario description"),
+      desc,
+      style = "margin-top:0.5rem;margin-bottom:0.75rem;"
+    )
+  })
+  
   
   observeEvent(input$import_csv, {
     req(input$import_csv$datapath)
@@ -1098,10 +1117,17 @@ server <- function(input, output, session) {
     "Center Squeeze (1D)" = list(
       type = "1d",
       V = tibble(x = c(
-        -95, -90, -85, -82, -75, -72, -66, -60, # liberal > centrist > conservative)
+        # example 2
+        -95, -85, -75, -69, -58, -47, -39, -30, # liberal > centrist > conservative
         -7, # centrist > liberal > conservative
         -1, 4, 8, 16, 20, # centrist > conservative > liberal
-        55, 60, 65, 75, 80, 90, 95), # conservative > centrist > liberal
+        40, 55, 65, 75, 80, 90, 95), # conservative > centrist > liberal
+        
+        # example 1
+        # -95, -90, -85, -82, -75, -72, -66, -60, # liberal > centrist > conservative
+        # -7, # centrist > liberal > conservative
+        # -1, 4, 8, 16, 20, # centrist > conservative > liberal
+        # 55, 60, 65, 75, 80, 90, 95), # conservative > centrist > liberal
         y = 0),
       C = tibble(id = c("A","B","C"), x = c(-70, 11, 60), y = 0)
     ),
@@ -1141,8 +1167,95 @@ server <- function(input, output, session) {
       C = tibble(id = c("A","B","C"),
                  x = c(-20, 60, 38),
                  y = c(0, 10, -52))
+    ),
+    "Clone Penalty (1D)" = list(
+      type = "1d",
+      V = tibble(
+        x = c(
+          # Left bloc (majority): prefers A≈D > B > C
+          -97, -92, -88, -84, -80, -76, -72, -68, -64, -60, -56, -52, -48, -44, -40, 
+          # Center voters: B > A≈D > C
+          -14,-9, -5, -2, 2, 5, 8, 12, 16, 20, 25,
+          # Right voters: C > B > A≈D
+          50, 60, 70, 80, 88, 95
+        ),
+        y = 0
+      ),
+      C = tibble(
+        id = c("A","B","C","D"),
+        x  = c(-70, 0, 70, -60),  # A and D are "clones" on the left
+        y  = 0)
+    ),
+    "Approval Threshold Sensitivity (1D)" = list(
+      type = "1d",
+      V = tibble(
+        x = c(
+          # Left cluster
+          -95,-90,-85,-80,-75,-70,-65,-60,-55,
+          # Center-ish
+          -8,-4,0,4,8,12,16,
+          # Right cluster
+          55,60,65,70,75,80,85,90,95
+        ),
+        y = 0
+      ),
+      C = tibble(
+        id = c("A","C","B"),
+        x  = c(-70, 0, 70),  # A = left, C = center, B = right
+        y  = 0
+      )
     )
   )
+  
+  scenario_descriptions <- list(
+    "Center Squeeze (1D)" = HTML("
+    <p><b>Center Squeeze:</b> Moderate or middle-of-the-road candidates can lose to extreme candidates within plurality and
+    ranked-choice  voting because they are “squeezed” by candidates on either side of them taking away voters.
+    <br><br>
+    In this scenario, there is a fairly good middle-of-the-road candidate, 
+    but ranked-choice and plurality voting instead choose extreme candidates. Think about it this way - 
+    imagine that the voters were the same but instead of having three candidates there were only two. 
+    If this was just an election with A vs B, B would win. 
+    If this was just an election of B vs C, B would win. If there was an election of A vs C, C would win. 
+    So in the head-to-head comparisons B wins two of the three elections.
+    </p>
+  "),
+    "Spoiler Effect (1D)" = HTML("
+    <p><b>Spoiler Effect:</b> In plurality voting, elections can be dramatically affected by <i>spoiler candidates</i> 
+    who win only a small number of votes.
+    <br><br>
+    In this scenario, candidate C has minimal support, but their presence in the election makes candidate A the winner. 
+    If they were not in the election, candidate B would win. Note that in the results table the other voting systems select B
+    as the winner and candidate A only wins under plurality voting.</p>
+  "),
+    "Mutual Majority Criterion (1D)" = HTML("
+    <p><b>Mutual Majority:</b> In certain situations cardinal voting can lead to winners that very few voters would choose
+    as their first pick.
+    <br><br>
+    In this scenario, B won according to cardinal, but only one voter was close to B. Additionally, candidate C lost according 
+    to cardinal voting but many more voters are close to C than B
+    </p>
+  "),
+    "Condorcet Cycle (2D)" = HTML("
+    <p><b>Condorcet Cycle:</b> One way to assess who is the best candidate is to examine head-to-head comparisons for each 
+    candidate pairing. However, in some situations a rock-paper-scissors-like loop can occur, where 
+    no single candidate beats all others head-to-head.
+    <br><br>
+    In this scenario, A wins in a A vs B comparison (13 to 6), B wins in a B vs C comparison (14 to 6), and 
+    C wins in a C vs A comparison (11 to 8). 
+    </p>
+  "),
+    "Clone Penalty (1D)" = HTML("
+    <p><b>Clone Penalty:</b> In situations where two candidates are too similar to one another, they can split  
+    voters support and can hand victory to a less-popular alternative.
+    <br><br>
+    In this scenario, candidates A and D are splitting a group of voters support, which leads to candidate B's victory in most 
+    of our voting systems here. Note that if either A or D were not present, the other candidate would have 15 votes.
+    
+    </p>
+  ")
+  )
+  
   
   observeEvent(input$scenario, {
     nm <- input$scenario
