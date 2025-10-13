@@ -506,8 +506,7 @@ ui <- fluidPage(
           "Spoiler Effect (1D)",
           "Mutual Majority Criterion (1D)",
           "Condorcet Cycle (2D)",
-          "Clone Penalty (1D)",
-          "Approval Threshold Sensitivity (1D)"
+          "Clone Penalty (1D)"
         ),
         selected = "Random"
       ),
@@ -1172,38 +1171,32 @@ server <- function(input, output, session) {
       type = "1d",
       V = tibble(
         x = c(
-          # Left bloc (majority): prefers A≈D > B > C
-          -97, -92, -88, -84, -80, -76, -72, -68, -64, -60, -56, -52, -48, -44, -40, 
-          # Center voters: B > A≈D > C
-          -14,-9, -5, -2, 2, 5, 8, 12, 16, 20, 25,
-          # Right voters: C > B > A≈D
-          50, 60, 70, 80, 88, 95
+          # # Left bloc (majority): A≈D > B > C  — 20 voters
+          # -97,-94,-92,-90,-88,-86,-84,-82,-80,-78,-76,-74,-72,-70,-68,-66,-64,-62,-60,-58, -56,
+          # # Center: B > A≈D > C  — 13 voters (bumped up)
+          # -12,-8,-6,-2, 2, 6, 10, 14, 18, 20, 22, 24, 26,
+          # # Right: C > B > A≈D  — 7 voters
+          # 58, 66, 72, 78, 82, 86, 90
+          # Left bloc (majority): prefers A≈D > B > C — same voters
+          -99, -96, -93, -90, -87, -84, -80, -76, -72, -68, -64, -60, -56, -52, -48, -44,
+          # Center voters: B > A≈D > C — same voters
+          -9, -5, -2, 2, 5, 8, 12, 16, 20, 25, 29, 33,
+          # Right voters: C > B > A≈D — same voters
+          65, 72, 79
+          
+          # # Left bloc (majority): prefers A≈D > B > C — same voters
+          # -94, -92, -88, -84, -80, -76, -72, -68, -64, -60, -56, -52, -48, -44, -40, -35,
+          # # Center voters: B > A≈D > C — same voters
+          # -9, -5, -2, 2, 5, 8, 12, 16, 20, 25, 29, 
+          # # Right voters: C > B > A≈D — same voters
+          # 60, 70, 80, 88
         ),
         y = 0
       ),
       C = tibble(
         id = c("A","B","C","D"),
-        x  = c(-70, 0, 70, -60),  # A and D are "clones" on the left
+        x  = c(-71, -67, 4, 70),# -70, 0, 70, -60),  # A and D are "clones" on the left
         y  = 0)
-    ),
-    "Approval Threshold Sensitivity (1D)" = list(
-      type = "1d",
-      V = tibble(
-        x = c(
-          # Left cluster
-          -95,-90,-85,-80,-75,-70,-65,-60,-55,
-          # Center-ish
-          -8,-4,0,4,8,12,16,
-          # Right cluster
-          55,60,65,70,75,80,85,90,95
-        ),
-        y = 0
-      ),
-      C = tibble(
-        id = c("A","C","B"),
-        x  = c(-70, 0, 70),  # A = left, C = center, B = right
-        y  = 0
-      )
     )
   )
   
@@ -1249,9 +1242,9 @@ server <- function(input, output, session) {
     <p><b>Clone Penalty:</b> In situations where two candidates are too similar to one another, they can split  
     voters support and can hand victory to a less-popular alternative.
     <br><br>
-    In this scenario, candidates A and D are splitting a group of voters support, which leads to candidate B's victory in most 
-    of our voting systems here. Note that if either A or D were not present, the other candidate would have 15 votes.
-    
+    In this scenario, candidates A and B are splitting a group of voters' support, which leads to candidate C's victory in 
+    plurality, cardinal, and Borda Count voting, but not ranked-choice voting. Note that if either A or B were not present, 
+    the other candidate would have 16 votes and would win in a plurality voting system.
     </p>
   ")
   )
