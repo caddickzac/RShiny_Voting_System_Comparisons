@@ -31,7 +31,7 @@ An interactive Shiny app for exploring how different voting methods select winne
 
 ### Requirements
 - R (≥ 4.1 recommended)
-- Packages: `shiny`, `tidyverse`, `ggforce`, `cowplot`, `gridExtra`, `DT`
+- Packages: `shiny`, `tidyverse`, `shinyjs`, `ggforce`, `cowplot`, `DT`, `later`
 
 ```r
-install.packages(c("shiny","tidyverse","ggforce","cowplot","gridExtra","DT"))
+install.packages(c("shiny","tidyverse","shinyjs","ggforce","cowplot","DT","later"))
