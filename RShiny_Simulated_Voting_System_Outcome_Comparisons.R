@@ -120,7 +120,8 @@ make_1d_strip <- function(V, C, top_choice_ids, active_mask = rep(TRUE, nrow(C))
 # ---- 1D Approval strip: shaded boxes instead of circles ----
 make_1d_strip_approval <- function(V, C, thr, top_choice_ids, inside_any,
                                    box_alpha = 0.18, bracket_lwd = 0.25) {
-  pal <- setNames(candidate_palette[seq_len(nrow(C))], C$id)
+  pal <- setNames(candidate_palette[seq_len(length(candidate_ids_current()))],
+                  candidate_ids_current())
   
   # voters: color by nearest; fade if they approve nobody
   voters_col <- tibble(
@@ -365,8 +366,17 @@ add_bar_value_labels <- function(p, data, x_col, y_col, max_y, digits = 0,
 }
 
 top_choice_given_active <- function(rank_mat, active_mask) {
+  active_mask <- as.logical(active_mask)
+  active_mask[is.na(active_mask)] <- FALSE
+  
   apply(rank_mat, 1, function(row) {
-    for (j in seq_along(row)) { id <- row[j]; if (active_mask[id]) return(id) }
+    for (j in seq_along(row)) {
+      id <- row[j]
+      if (!is.finite(id)) next
+      if (id >= 1L && id <= length(active_mask) && isTRUE(active_mask[id])) {
+        return(id)
+      }
+    }
     NA_integer_
   })
 }
@@ -510,7 +520,12 @@ ui <- fluidPage(
         ),
         selected = "Random"
       ),
-      
+      # show/hide candidates
+      checkboxInput("enable_filter", "Remove candidates", FALSE),
+      conditionalPanel(
+        "input.enable_filter",
+        uiOutput("candidate_filter_ui")
+      ),
       tags$div(class="toolbar-inline",
                actionButton("randomize","Randomize Data"),
                downloadButton("export_csv", "Export CSV"),
@@ -1543,6 +1558,28 @@ server <- function(input, output, session) {
     ignoreInit = FALSE
   )
   
+  # dynamic checkbox UI – defaults to "all candidates selected"
+  output$candidate_filter_ui <- renderUI({
+    ids <- candidate_ids()
+    checkboxGroupInput(
+      "candidate_filter",
+      label = "Candidates included:",
+      choices = ids,
+      selected = ids,           # start with all ON
+      inline   = TRUE
+    )
+  })
+  
+  # whenever the candidate set changes (randomize, scenario/import),
+  # reset the checkboxes to "all selected"
+  observeEvent(candidate_ids(), {
+    ids <- candidate_ids()
+    if (!is.null(ids) && length(ids)) {
+      updateCheckboxGroupInput(session, "candidate_filter",
+                               choices  = ids, selected = ids)
+    }
+  }, ignoreInit = FALSE)
+  
   candidate_ids <- reactive(LETTERS[seq_len(input$candidate_count)])
   
   candidateData <- eventReactive(
@@ -1568,52 +1605,99 @@ server <- function(input, output, session) {
     ignoreInit = FALSE
   )
   
+  # keep_ids are candidate *letters* (e.g., c("A","C"))
+  subset_profile <- function(D, rm, all_ids, keep_ids) {
+    keep_ids <- intersect(keep_ids, all_ids)
+    keep_idx <- match(keep_ids, all_ids)
+    
+    # distances: keep selected columns
+    D2 <- D[, keep_idx, drop = FALSE]
+    
+    # reindex rank matrix rows to 1..K' in the new column order
+    idx_map <- setNames(seq_along(keep_idx), keep_idx)  # "old col idx" -> "new col idx"
+    rm2 <- t(apply(rm, 1, function(row){
+      row <- row[row %in% keep_idx]              # drop eliminated/unchecked
+      as.integer(idx_map[as.character(row)])     # remap to 1..K'
+    }))
+    
+    list(D = D2, rm = rm2, ids = keep_ids)
+  }
+  
+  # which candidates are currently "in"?
+  included_ids <- reactive({
+    ids <- candidate_ids()
+    if (!isTRUE(input$enable_filter)) return(ids)
+    sel <- input$candidate_filter
+    if (is.null(sel) || !length(sel)) return(ids)  # if user empties it, fall back to all
+    intersect(sel, ids)
+  })
+  
   dist_matrix <- reactive({
     V <- voterData(); C <- candidateData()
     sqrt(outer(V$x, C$x, `-`)^2 + outer(V$y, C$y, `-`)^2)
   })
+  
+  # filtered candidate tibble
+  candidateData_current <- reactive({
+    C <- candidateData()
+    keep <- included_ids()
+    C %>% dplyr::filter(id %in% keep) %>% dplyr::arrange(match(id, keep))
+  })
+  
+  # filtered distances/ranks
+  dist_rank_current <- reactive({
+    D  <- dist_matrix()
+    rm <- rank_matrix()
+    ids <- candidateData()$id
+    subset_profile(D, rm, ids, included_ids())
+  })
+  
+  # convenience helpers (use these below)
+  rank_matrix_current <- reactive(dist_rank_current()$rm)
+  dist_matrix_current <- reactive(dist_rank_current()$D)
+  candidate_ids_current <- reactive(dist_rank_current()$ids)
+  first_choice_idx_current <- reactive(rank_matrix_current()[,1])
+  pref1_current <- reactive(candidate_ids_current()[first_choice_idx_current()])
   
   rank_matrix      <- reactive(rank_by_distance(dist_matrix()))
   first_choice_idx <- reactive(rank_matrix()[,1])
   pref1            <- reactive(candidateData()$id[first_choice_idx()])
   
   plurality_summary <- reactive({
-    tibble(candidate = pref1()) |>
+    tibble(candidate = pref1_current()) |>
       count(candidate, name = "Votes") |>
-      complete(candidate = candidate_ids(), fill = list(Votes = 0)) |>
+      complete(candidate = candidate_ids_current(), fill = list(Votes = 0)) |>
       arrange(desc(Votes))
   })
   
   score_table <- reactive({
-    C <- candidateData(); md <- colMeans(dist_matrix())
+    C <- candidateData_current(); md <- colMeans(dist_matrix_current())
     tibble(candidate = C$id, mean_distance = md) |> arrange(mean_distance)
   })
   
   approval_summary <- reactive({
-    C <- candidateData(); D <- dist_matrix(); thr <- as.numeric(approval_thr())
+    C <- candidateData_current(); D <- dist_matrix_current(); thr <- as.numeric(approval_thr())
     approvals <- colSums(D <= thr); didnt <- sum(rowSums(D <= thr) == 0)
     tibble(candidate = c(C$id, "Didn't vote"),
            value = c(approvals, didnt)) |> arrange(desc(value))
   })
   
   borda_summary <- reactive({
-    rm <- rank_matrix()                # N x K, each row nearest -> farthest
+    rm <- rank_matrix_current()
     K  <- ncol(rm); N <- nrow(rm)
     
-    # For each voter, build a “position per candidate” row: 1..K
     pos_matrix <- matrix(0L, nrow = N, ncol = K)
     for (i in seq_len(N)) pos_matrix[i, rm[i, ]] <- seq_len(K)
     
-    # Basic Borda: top gets K-1, next K-2, …, last 0
     points <- colSums(K - pos_matrix)
     
-    tibble(candidate = candidateData()$id, Points = as.integer(points)) |>
+    tibble(candidate = candidate_ids_current(),  # <- was candidate_ids_current()$id
+           Points    = as.integer(points)) |>
       arrange(desc(Points))
   })
   
-  
   rcv_out <- reactive({
-    rm <- rank_matrix()
+    rm <- rank_matrix_current()
     rcv_irv(rm)
   })
   
@@ -1631,13 +1715,13 @@ server <- function(input, output, session) {
   
   # ---------- maps ----------
   map_1d <- reactive({
-    V <- voterData(); C <- candidateData()
-    make_1d_strip(V, C, top_choice_ids = pref1(), active_mask = rep(TRUE, nrow(C)))
+    V <- voterData(); C <- candidateData_current()
+    make_1d_strip(V, C, top_choice_ids = pref1_current(), active_mask = rep(TRUE, nrow(C)))
   })
   
   map_1d_approval <- reactive({
     V <- voterData()
-    C <- candidateData()
+    C <- candidateData_current()
     thr <- as.numeric(approval_thr())
     
     # which voters approve at least one candidate (for fading)
@@ -1648,7 +1732,7 @@ server <- function(input, output, session) {
       V = V,
       C = C,
       thr = thr,
-      top_choice_ids = pref1(),
+      top_choice_ids = pref1_current(),
       inside_any = inside_any
     )
   })
@@ -1658,15 +1742,16 @@ server <- function(input, output, session) {
     out  <- rcv_out()
     r    <- rcv_round()
     snap <- out$rounds[[r]]
-    V  <- voterData(); C <- candidateData(); rm <- rank_matrix()
+    V  <- voterData(); C <- candidateData_current(); rm <- rank_matrix_current()
     dest_idx <- top_choice_given_active(rm, snap$active)
     top_ids  <- C$id[dest_idx]
     make_1d_strip(V, C, top_choice_ids = top_ids, active_mask = snap$active)
   })
   
-  map_plot_generic <- function(current_choice_ids, active_mask = NULL, rcv_mode = FALSE) {
-    V <- voterData(); C <- candidateData()
-    pal <- setNames(candidate_palette[seq_len(nrow(C))], C$id)
+  map_plot_generic <- function(current_choice_ids, C = candidateData(), active_mask = NULL, rcv_mode = FALSE) {
+    V <- voterData()
+    pal <- setNames(candidate_palette[seq_len(length(candidate_ids_current()))],
+                    candidate_ids_current())
     df_c <- C; df_c$alpha <- 1
     if (rcv_mode && !is.null(active_mask)) df_c$alpha <- ifelse(active_mask, 1, 0.25)
     
@@ -1720,18 +1805,19 @@ server <- function(input, output, session) {
     snap <- out$rounds[[r]]
     
     V  <- voterData()
-    C  <- candidateData()
-    rm <- rank_matrix()
+    C  <- candidateData_current()
+    rm <- rank_matrix_current()
     
     dest_idx <- top_choice_given_active(rm, snap$active)
     top_ids  <- C$id[dest_idx]
     
-    map_plot_generic(top_ids, active_mask = snap$active, rcv_mode = TRUE)
+    map_plot_generic(top_ids, C = C, active_mask = snap$active, rcv_mode = TRUE)
   })
   
   map_approval <- reactive({
     V <- voterData(); C <- candidateData(); D <- dist_matrix(); thr <- as.numeric(approval_thr())
-    pal <- setNames(candidate_palette[seq_len(nrow(C))], C$id)
+    pal <- setNames(candidate_palette[seq_len(length(candidate_ids_current()))],
+                    candidate_ids_current())
     inside_any <- apply(D <= thr, 1, any)
     V$color_id <- pref1(); V$alpha <- ifelse(inside_any, 0.9, 0.3)
     
@@ -1760,10 +1846,16 @@ server <- function(input, output, session) {
   
   # ---------- RCV composition helper ----------
   rcv_composition_round <- function(round_index) {
-    out <- rcv_out(); rm <- rank_matrix(); C <- candidateData()
-    src_idx <- first_choice_idx()
-    snap <- out$rounds[[round_index]]; active <- snap$active
+    out <- rcv_out()
+    rm  <- rank_matrix_current()       # <- filtered
+    C   <- candidateData_current()     # <- filtered
+    
+    src_idx <- rm[, 1]
+    snap    <- out$rounds[[round_index]]
+    active  <- snap$active             # length == nrow(C)
+    
     dest_idx <- top_choice_given_active(rm, active)
+    
     tibble(src = C$id[src_idx], dest = C$id[dest_idx]) |>
       filter(!is.na(dest)) |>
       count(dest, src, name = "count") |>
@@ -1772,7 +1864,8 @@ server <- function(input, output, session) {
   
   # ---------- results bars ----------
   bars_plurality <- reactive({
-    pal <- setNames(candidate_palette[seq_len(input$candidate_count)], candidate_ids())
+    pal <- setNames(candidate_palette[seq_len(length(candidate_ids_current()))],
+                    candidate_ids_current())
     df <- plurality_summary()
     maxv <- max(df$Votes); is_tie <- sum(df$Votes == maxv) > 1
     winners <- if (is_tie) df$candidate[df$Votes == maxv] else df$candidate[which.max(df$Votes)]
@@ -1791,7 +1884,8 @@ server <- function(input, output, session) {
   })
   
   bars_score <- reactive({
-    pal <- setNames(candidate_palette[seq_len(input$candidate_count)], candidate_ids())
+    pal <- setNames(candidate_palette[seq_len(length(candidate_ids_current()))],
+                    candidate_ids_current())
     df <- score_table()
     minv <- min(df$mean_distance); is_tie <- sum(abs(df$mean_distance - minv) < 1e-9) > 1
     winners <- if (is_tie) df$candidate[abs(df$mean_distance - minv) < 1e-9]
@@ -1810,7 +1904,8 @@ server <- function(input, output, session) {
   })
   
   bars_approval <- reactive({
-    pal <- setNames(candidate_palette[seq_len(input$candidate_count)], candidate_ids())
+    pal <- setNames(candidate_palette[seq_len(length(candidate_ids_current()))],
+                    candidate_ids_current())
     df <- approval_summary()
     df$fill <- df$candidate
     pal_full <- c(pal, "Didn't vote" = "#777777")
@@ -1853,10 +1948,13 @@ server <- function(input, output, session) {
   })
   
   bars_borda <- reactive({
-    pal <- setNames(candidate_palette[seq_len(input$candidate_count)], candidate_ids())
+    pal <- setNames(candidate_palette[seq_len(length(candidate_ids_current()))],
+                    candidate_ids_current())
     df  <- borda_summary() |> rename(points = Points)
     
-    max_points <- (input$candidate_count - 1L) * input$total_voters
+    K <- ncol(rank_matrix_current())
+    N <- nrow(rank_matrix_current())
+    max_points <- (K - 1L) * N
     winners <- df$candidate[df$points == max(df$points)]
     
     p <- ggplot(df, aes(x = candidate, y = points, fill = candidate)) +
@@ -1877,7 +1975,7 @@ server <- function(input, output, session) {
   
   # ---------- RCV bars ----------
   bars_rcv_round <- reactive({
-    out <- rcv_out(); r <- rcv_round(); C <- candidateData()
+    out <- rcv_out(); r <- rcv_round(); C <- candidateData_current()
     rounds <- out$rounds; snap <- rounds[[r]]
     active <- snap$active
     dest_levels <- C$id[active]
@@ -2055,7 +2153,7 @@ server <- function(input, output, session) {
   
   # ---------- Results summary table ----------
   results_table <- reactive({
-    C   <- candidateData()
+    C   <- candidateData_current()
     ids <- C$id
     N   <- nrow(voterData())
     
