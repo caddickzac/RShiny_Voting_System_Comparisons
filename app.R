@@ -1,7 +1,4 @@
-# app.R — Simulated Voting System Outcome Comparisons
-# Includes: RCV with Borda-like tiebreaker, stacked-round visual,
-# approval “Didn’t vote” handling, 50% dashed line + label,
-# voter/results tables, and top-aligned plots.
+# Voting System Sandbox and Educational Tool
 
 library(shiny)
 library(tidyverse)
