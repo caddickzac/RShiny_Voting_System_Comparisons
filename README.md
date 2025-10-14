@@ -2,8 +2,7 @@
 
 An interactive Shiny app for exploring how different voting methods pick winners on synthetic electorates. Compare outcomes in 1-D and 2-D political spaces, tweak parameters, and inspect round-by-round dynamics.
 
-Website: (Election Outcomes Sandbox Shiny App)[https://zcaddick.shinyapps.io/rshiny_voting_system_comparisons/]
-
+Website: [Election Outcomes Sandbox Shiny App](https://zcaddick.shinyapps.io/rshiny_voting_system_comparisons/)
 
 ## Features
 
