@@ -120,8 +120,7 @@ make_1d_strip <- function(V, C, top_choice_ids, active_mask = rep(TRUE, nrow(C))
 # ---- 1D Approval strip: shaded boxes instead of circles ----
 make_1d_strip_approval <- function(V, C, thr, top_choice_ids, inside_any,
                                    box_alpha = 0.18, bracket_lwd = 0.25) {
-  pal <- setNames(candidate_palette[seq_len(length(candidate_ids_current()))],
-                  candidate_ids_current())
+  pal <- setNames(candidate_palette[seq_len(nrow(C))], C$id)
   
   # voters: color by nearest; fade if they approve nobody
   voters_col <- tibble(
@@ -962,31 +961,41 @@ server <- function(input, output, session) {
       
     } else if (vs == "approval") {
       o <- approval_outcome(); if (is.null(o)) return("")
+      if (o$turnout == 0) {
+        return(sprintf(
+          "<p><b>Who wins according to approval voting?</b><br>
+       <b>No approvals were cast.</b> At the current threshold (%s), no voter approved any candidate,
+       so every candidate has 0 approvals and the method cannot select a winner.<br><br>
+       <b>What to try:</b> Increase the approval distance threshold or compare with other methods that
+       don’t rely on approval cutoffs.<br><br></p>",
+          approval_thr()
+        ))
+      }
+      
       if (o$tie) {
         sprintf(
           "<p><b>Who wins according to approval voting?</b><br>
-          <b>%s</b> tie according to approval voting, because while these candidates had the largest number of votes of approval,
-          they also had an equal number of votes (%d/%d votes or %s).<br><br>
-          <b>Approval Voting Rules</b>:<br>
-          Approval voting prioritizes selecting a candidate based on who voters most approve of. In contrast to plurality voting, 
-          voters can choose many candidates, essentially ratings each candidate with a 1 (approve) or 0 (do not approve). 
-          A winning candidate is the one with the most votes of approval and does not 
-          need to have over 50%% of the votes to win.
-          <br><br></p>",
+       <b>%s</b> tie according to approval voting, because while these candidates had the largest number of votes of approval,
+       they also had an equal number of votes (%d/%d votes or %s).<br><br>
+       <b>Approval Voting Rules</b>:<br>
+       Approval voting prioritizes selecting a candidate based on who voters most approve of. In contrast to plurality voting, 
+       voters can choose many candidates, essentially rating each candidate with a 1 (approve) or 0 (do not approve). 
+       A winning candidate is the one with the most votes of approval and does not 
+       need to have over 50%% of the votes to win.
+       <br><br></p>",
           paste(o$ties, collapse = " and "), o$top, o$turnout, fmt_pct(o$top, o$turnout)
         )
       } else {
         sprintf(
           "<p><b>Who wins according to approval voting?</b><br>
-          <b>%s wins according to approval voting</b>, because this candidate had the largest number of votes 
-          (%d/%d votes or %s).<br><br>
-          
-          <b>Approval Voting Rules</b>:<br>
-          Approval voting prioritizes selecting a candidate based on who voters most approve of. In contrast to plurality voting, 
-          voters can choose many candidates, essentially ratings each candidate with a 1 (approve) or 0 (do not approve). 
-          A winning candidate is the one with the most votes of approval and does not 
-          need to have over 50%% of the votes to win.
-          <br><br></p>",
+       <b>%s wins according to approval voting</b>, because this candidate had the largest number of votes 
+       (%d/%d votes or %s).<br><br>
+       <b>Approval Voting Rules</b>:<br>
+       Approval voting prioritizes selecting a candidate based on who voters most approve of. In contrast to plurality voting, 
+       voters can choose many candidates, essentially rating each candidate with a 1 (approve) or 0 (do not approve). 
+       A winning candidate is the one with the most votes of approval and does not 
+       need to have over 50%% of the votes to win.
+       <br><br></p>",
           o$winner, o$top, o$turnout, fmt_pct(o$top, o$turnout)
         )
       }
@@ -1610,15 +1619,20 @@ server <- function(input, output, session) {
     keep_ids <- intersect(keep_ids, all_ids)
     keep_idx <- match(keep_ids, all_ids)
     
-    # distances: keep selected columns
+    # distances: keep selected columns (already stable when K′ = 1)
     D2 <- D[, keep_idx, drop = FALSE]
     
-    # reindex rank matrix rows to 1..K' in the new column order
+    # map old candidate indices -> new 1..K′ indices
     idx_map <- setNames(seq_along(keep_idx), keep_idx)  # "old col idx" -> "new col idx"
-    rm2 <- t(apply(rm, 1, function(row){
-      row <- row[row %in% keep_idx]              # drop eliminated/unchecked
-      as.integer(idx_map[as.character(row)])     # remap to 1..K'
-    }))
+    
+    # build an N × K′ matrix robustly, even when K′ = 1
+    rm2_rows <- lapply(seq_len(nrow(rm)), function(i) {
+      row <- rm[i, ]
+      row <- row[row %in% keep_idx]                 # drop unchecked
+      as.integer(idx_map[as.character(row)])        # remap to 1..K′
+    })
+    rm2 <- do.call(rbind, rm2_rows)                 # N × K′, never 1 × N
+    storage.mode(rm2) <- "integer"
     
     list(D = D2, rm = rm2, ids = keep_ids)
   }
@@ -1815,34 +1829,40 @@ server <- function(input, output, session) {
   })
   
   map_approval <- reactive({
-    V <- voterData(); C <- candidateData(); D <- dist_matrix(); thr <- as.numeric(approval_thr())
-    pal <- setNames(candidate_palette[seq_len(length(candidate_ids_current()))],
-                    candidate_ids_current())
-    inside_any <- apply(D <= thr, 1, any)
-    V$color_id <- pref1(); V$alpha <- ifelse(inside_any, 0.9, 0.3)
+    V   <- voterData()
+    C   <- candidateData_current()        # <- filtered candidates
+    D   <- dist_matrix_current()          # <- filtered distances
+    thr <- as.numeric(approval_thr())
+    
+    cur_ids <- candidate_ids_current()
+    pal <- setNames(candidate_palette[seq_len(length(cur_ids))], cur_ids)
+    
+    # which voters approve at least one *current* candidate
+    inside_any <- if (ncol(D)) apply(D <= thr, 1, any) else rep(FALSE, nrow(V))
+    
+    # color by nearest among *current* candidates
+    V$color_id <- pref1_current()
+    V$alpha    <- ifelse(inside_any, 0.9, 0.3)
     
     p <- ggplot() +
-      geom_point(data=V, aes(x=x, y=y, color=factor(color_id), alpha=alpha), size=1.8) +
-      geom_text (data=C, aes(x=x, y=y, label=id, color=id), fontface=2, size=6, show.legend=FALSE) +
-      ggforce::geom_circle(data=C, aes(x0=x, y0=y, r=thr, color=id), alpha=0.25, inherit.aes=FALSE) +
-      scale_color_manual(values=pal, guide="none") +
+      geom_point(data = V, aes(x = x, y = y, color = factor(color_id), alpha = alpha), size = 1.8) +
+      geom_text (data = C, aes(x = x, y = y, label = id, color = id), fontface = 2, size = 6, show.legend = FALSE) +
+      ggforce::geom_circle(data = C, aes(x0 = x, y0 = y, r = thr, color = id), alpha = 0.25, inherit.aes = FALSE) +
+      scale_color_manual(values = pal, guide = "none") +
       scale_alpha_identity() +
-      # CLIP ON here so circles don't draw outside the panel
-      coord_fixed(xlim=c(-100,100), ylim=c(-100,100), expand=FALSE, clip = "on") +
-      scale_x_continuous(expand = expansion(mult=c(0.02,0.02))) +
-      scale_y_continuous(expand = expansion(mult=c(0.02,0.02))) +
+      coord_fixed(xlim = c(-100, 100), ylim = c(-100, 100), expand = FALSE, clip = "on") +
+      scale_x_continuous(expand = expansion(mult = c(0.02, 0.02))) +
+      scale_y_continuous(expand = expansion(mult = c(0.02, 0.02))) +
       theme_bw() +
-      theme(panel.grid.major=element_blank(),
-            panel.grid.minor=element_blank(),
-            aspect.ratio=1,
+      theme(panel.grid.major = element_blank(),
+            panel.grid.minor = element_blank(),
+            aspect.ratio = 1,
             plot.margin = margin(t = 5, r = 10, b = 28, l = 32)) +
       labs(title = "Voter & Candidate Positions",
-           x="Economic Scale", y="Social Scale")
-
-    p <- add_pole_labels_outside(p) 
-    p
+           x = "Economic Scale", y = "Social Scale")
+    
+    add_pole_labels_outside(p)
   })
-  
   
   # ---------- RCV composition helper ----------
   rcv_composition_round <- function(round_index) {
@@ -1904,17 +1924,18 @@ server <- function(input, output, session) {
   })
   
   bars_approval <- reactive({
+    cur_ids <- candidate_ids_current()
     pal <- setNames(candidate_palette[seq_len(length(candidate_ids_current()))],
                     candidate_ids_current())
     df <- approval_summary()
     df$fill <- df$candidate
     pal_full <- c(pal, "Didn't vote" = "#777777")
     
-    x_levels <- c(candidate_ids(), "Didn't vote")
+    x_levels <- c(cur_ids, "Didn't vote")
     df$candidate <- factor(df$candidate, levels = x_levels)
     
     x_labels <- setNames(x_levels, x_levels)
-    if (input$candidate_count > 10) x_labels["Didn't vote"] <- "Didn't\nvote"
+    if (length(cur_ids) > 10) x_labels["Didn't vote"] <- "Didn't\nvote"
     
     # winners (ignore "Didn't vote")
     cand_df <- df |> filter(as.character(candidate) != "Didn't vote")
@@ -1943,7 +1964,7 @@ server <- function(input, output, session) {
            x = "Candidate", y = "Approvals")
     
     p <- add_bar_value_labels(p, df, "candidate", "value", input$total_voters, 0)
-    p <- add_winner_text_center(p, winners, candidate_ids(), input$total_voters)
+    p <- add_winner_text_center(p, winners, cur_ids, input$total_voters)
     add_half_line_discrete(p, y50, x_levels)
   })
   
