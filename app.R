@@ -487,18 +487,18 @@ ui <- fluidPage(
     "))
   ),
   
-  titlePanel("Simulated Voting System Outcome Comparisons"),
+  titlePanel("Election Outcomes Sandbox"),
   
   tags$div(
     style = "margin-top:-6px; padding-top:8px; border-top:1px solid #e5e5e5; margin-bottom:10px;",
     tags$p(
       style = "margin:0;",
+      "This interactive app was created by ",
+      tags$a(href = "https://zacharycaddick.com/", target = "_blank", rel = "noopener",
+             "Zachary A. Caddick. "),
       "For more information click ",
       tags$a(href = "https://data-cene.com/", target = "_blank", rel = "noopener",
-             "here."),
-      "This application was created by ",
-      tags$a(href = "https://zacharycaddick.com/", target = "_blank", rel = "noopener",
-             "Zachary A. Caddick.")
+             "here.")
     )
   ),
   
