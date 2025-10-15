@@ -1,8 +1,8 @@
-# Voting System Comparison Simulation (RShiny)
+# Election Outcomes Sandbox (RShiny)
 
-> **Status:** Under active development.
+An interactive Shiny app for exploring how different voting methods pick winners on synthetic electorates. Compare outcomes in 1-D and 2-D political spaces, tweak parameters, and inspect round-by-round dynamics.
 
-An interactive Shiny app for exploring how different voting methods select winners on synthetic electorates. Compare outcomes across 1-D and 2-D political spaces, tweak parameters, and inspect round-by-round dynamics.
+Website: [Election Outcomes Sandbox Shiny App](https://zcaddick.shinyapps.io/rshiny_voting_system_comparisons/)
 
 ## Features
 
@@ -12,22 +12,30 @@ An interactive Shiny app for exploring how different voting methods select winne
   - **Approval** with adjustable **distance threshold** 
   - **Cardinal (Score)** using spatial distance   
   - **Borda Count** 
-- **Scales:** up to **20 candidates** and **500 voters**
+- **Scales:** up to **20 candidates** and **500 voters** (2-D) or 8 candidates and 50 voters (1-D)
 - **Visuals:**
   - Choose between 1-D and 2-D examples
-  - Top-aligned layout: map on the left, results on the right
-  - 50% guide line/label on bar charts
-  - 2-D approval regions drawn as circles (clipped to frame)
-  - **1-D approval** regions drawn as **boxes** (candidate-colored with opacity) plus “┐” style brackets for overlap clarity
-  - RCV: eliminated candidates shown with a red “X” on maps; stacked flow bars across rounds
+  - Side-by-side layout: visual map of voter and candidate positions on the left, election results on the right
+  - Modifiable approval thresholds for approval voting shown as circles (2-D) or brackets (1-D)
+  - RCV: eliminated candidates are crossed out on maps; stacked composition bars show vote transfers
 - **Tables:**
   - **Voter Data**: coordinates, distances to each candidate, full preference order, and an **“Approves”** column (comma-separated approved candidates; blank if none)
-  - **Results**: per-method outcomes; **counts + percentages** formatted `N (P%)`  
+  - **Results**: per-method outcomes; **counts + percentages**
     - Cardinal shows numeric score only  
     - RCV shows `X` for eliminated candidates in the final round snapshot
 - **Sampling nicety (1-D):** voter and candidate x-positions are sampled with a **minimum 2-notch separation** to avoid overplotting of tick marks.
-
-## Quick start
+- **Results explanations:**
+    - Explanations for the rules of each voting system.
+    - Explains which candidate won and why for each voting system and show relevant statistical information for current election example.
+- **Remove candidates option:**
+    - Can remove specific candidates from the election to see how their presence/absence affects the election outcome for different voting systems. 
+- **Scenarios:**
+    - Preset scenarios for examples of center squeeze, spoiler effect, mutual majority criterion, Condorcet cycle, and clone penality.
+- **Import/Export:**
+    - Save/load specific election configurations.
+    - Easy to create custom elections with specific voter and candidate placements.
+- **Voting criterion assessment output:**
+    - Can toggle view to show voting criterion assessments within election example for the following criterions: Majority Winner, Majority Loser, Plurality Leader, Mutual Majority, Condorcet Winner, IIA
 
 ### Requirements
 - R (≥ 4.1 recommended)
