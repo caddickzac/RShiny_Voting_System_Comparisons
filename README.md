@@ -47,7 +47,7 @@ install.packages(c("shiny","tidyverse","shinyjs","ggforce","cowplot","DT","later
 
 ### Screenshots of App
 
-#### Screenshot 1:  <br> 1-D Election Example Using Plurality Voting.  
+#### #1:  <br> 1-D Election Example Using Plurality Voting.  
 <img src="https://raw.githubusercontent.com/caddickzac/RShiny_Voting_System_Comparisons/main/App%20Screenshots/Screenshot_1.png" width="90%">
 <br><br>
 
