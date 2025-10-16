@@ -47,5 +47,6 @@ install.packages(c("shiny","tidyverse","shinyjs","ggforce","cowplot","DT","later
 
 ### Screenshots of App
 
-<img src="https://raw.githubusercontent.com/caddickzac/RShiny_Voting_System_Comparisons/main/App_Screenshots/Screenshot_1.png" width="50%">
+<img src="https://raw.githubusercontent.com/caddickzac/RShiny_Voting_System_Comparisons/main/App%20Screenshots/Screenshot_1.png" width="50%">
+https://github.com/caddickzac/RShiny_Voting_System_Comparisons/blob/main/App%20Screenshots/Screenshot_1.png
 <br><br>
