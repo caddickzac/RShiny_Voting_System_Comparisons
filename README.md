@@ -43,3 +43,9 @@ Website: [Election Outcomes Sandbox Shiny App](https://zcaddick.shinyapps.io/rsh
 
 ```r
 install.packages(c("shiny","tidyverse","shinyjs","ggforce","cowplot","DT","later"))
+```
+
+### Screenshots of App
+
+<img src="https://raw.githubusercontent.com/caddickzac/RShiny_Voting_System_Comparisons/main/App_Screenshots/Screenshot_1.png" width="50%">
+<br><br>
