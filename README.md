@@ -47,30 +47,30 @@ install.packages(c("shiny","tidyverse","shinyjs","ggforce","cowplot","DT","later
 
 ### Screenshots of App
 
-#### #1:  <br> 1-D Election Example Using Plurality Voting.  
+#### #1. <br> 1-D Election Example Using Plurality Voting.  
 <img src="https://raw.githubusercontent.com/caddickzac/RShiny_Voting_System_Comparisons/main/App%20Screenshots/Screenshot_1.png" width="90%">
 <br><br>
 
-#### Screenshot 2:  2-D Election Example Using Ranked-Choice Voting.  
+#### #2. <br> 2-D Election Example Using Ranked-Choice Voting.  
 <img src="https://raw.githubusercontent.com/caddickzac/RShiny_Voting_System_Comparisons/main/App%20Screenshots/Screenshot_2.png" width="90%">
 <br><br>
 
-#### Screenshot 3:  2-D Election Example Using Ranked-Choice Voting and Showing Candidate Eliminations.  
+#### #3. <br> 2-D Election Example Using Ranked-Choice Voting and Showing Candidate Eliminations.  
 <img src="https://raw.githubusercontent.com/caddickzac/RShiny_Voting_System_Comparisons/main/App%20Screenshots/Screenshot_3.png" width="90%">
 <br><br>
 
-#### Screenshot 4:  Example of Election Output Information with Voting System Results Table and Voting Criteria Assessment Table with Criteria Explanations.  
+#### #4. <br> Example of Election Output Information with Voting System Results Table and Voting Criteria Assessment Table with Criteria Explanations.  
 <img src="https://raw.githubusercontent.com/caddickzac/RShiny_Voting_System_Comparisons/main/App%20Screenshots/Screenshot_4.png" width="90%">
 <br><br>
 
-#### Screenshot 5:  2-D Election Example Using Approval Voting and Showing Approval Thresholds.
+#### #5. <br> 2-D Election Example Using Approval Voting and Showing Approval Thresholds.
 <img src="https://raw.githubusercontent.com/caddickzac/RShiny_Voting_System_Comparisons/main/App%20Screenshots/Screenshot_5.png" width="90%">
 <br><br>
 
-#### Screenshot 6:  1-D Election Example Using Cardinal (Score) Voting.  
+#### #6. <br> 1-D Election Example Using Cardinal (Score) Voting.  
 <img src="https://raw.githubusercontent.com/caddickzac/RShiny_Voting_System_Comparisons/main/App%20Screenshots/Screenshot_6.png" width="90%">
 <br><br>
 
-#### Screenshot 7: Spoiler Effect Election Example. 
+#### #7. <br> Spoiler Effect Election Example. 
 <img src="https://raw.githubusercontent.com/caddickzac/RShiny_Voting_System_Comparisons/main/App%20Screenshots/Screenshot_7.png" width="90%">
 <br><br>
